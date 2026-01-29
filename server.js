@@ -13,8 +13,26 @@ connectDB();
 
 // Middlewares
 app.use(helmet()); // Seguridad HTTP headers
+const allowedOrigins = [
+  'http://localhost:8080',
+  'http://localhost:5173',
+  'https://fronted-senati.vercel.app'
+];
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:8080',
+  origin: function (origin, callback) {
+    // Permitir requests sin origen (como apps móviles o curl)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      // Opcional: Permitir cualquier subdominio de vercel.app para preview
+      if (origin.endsWith('.vercel.app')) {
+        return callback(null, true);
+      }
+      var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
   credentials: true
 }));
 app.use(morgan('dev')); // Logger
