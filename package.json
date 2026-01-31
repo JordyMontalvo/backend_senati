@@ -8,20 +8,26 @@
     "dev": "nodemon server.js",
     "import": "node scripts/importar-datos.js"
   },
-  "keywords": ["horarios", "senati", "api", "mongodb"],
+  "keywords": [
+    "horarios",
+    "senati",
+    "api",
+    "mongodb"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "express": "^4.18.2",
-    "mongoose": "^8.0.0",
+    "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.2",
-    "mongoose-paginate-v2": "^1.7.4",
+    "express": "^4.18.2",
     "express-validator": "^7.0.1",
-    "morgan": "^1.10.0",
     "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.0.0",
+    "mongoose-paginate-v2": "^1.7.4",
+    "morgan": "^1.10.0",
+    "multer": "^2.0.2",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

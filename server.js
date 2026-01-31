@@ -85,6 +85,7 @@ app.use('/api/aulas', aulasRoutes);
 app.use('/api/asignaciones', asignacionesRoutes);
 app.use('/api/horarios', horariosRoutes);
 app.use('/api/estudiantes', estudiantesRoutes);
+app.use('/api/upload', require('./routes/upload'));
 app.use('/api/matriculas', matriculasRoutes);
 
 // Manejo de errores 404
