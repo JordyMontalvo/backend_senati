@@ -34,6 +34,10 @@ const profesorSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  sedes: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Sede'
+  }],
   activo: {
     type: Boolean,
     default: true

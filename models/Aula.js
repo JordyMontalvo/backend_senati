@@ -13,6 +13,11 @@ const aulaSchema = new mongoose.Schema({
     required: [true, 'El nombre del aula es requerido'],
     trim: true
   },
+  sede: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Sede',
+    required: [true, 'La sede es requerida']
+  },
   edificio: {
     type: String,
     trim: true

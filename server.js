@@ -88,6 +88,8 @@ app.use('/api/estudiantes', estudiantesRoutes);
 app.use('/api/upload', require('./routes/upload'));
 app.use('/api/matriculas', matriculasRoutes);
 
+app.use('/api/ubicaciones', require('./routes/ubicaciones'));
+
 // Manejo de errores 404
 app.use((req, res) => {
   res.status(404).json({
