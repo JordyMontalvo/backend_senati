@@ -1,39 +1,35 @@
 const mongoose = require('mongoose');
 
-const SedeSchema = new mongoose.Schema({
+const sedeSchema = new mongoose.Schema({
   nombre: {
     type: String,
-    required: true,
-    trim: true
-  },
-  codigo: {
-    type: String,
-    trim: true,
+    required: [true, 'El nombre de la sede es requerido'],
     unique: true,
-    sparse: true
-  },
-  tipo: {
-    type: String,
-    enum: ['CFP', 'UCP', 'ESCUELA', 'OTRO'],
-    default: 'CFP'
-  },
-  zonal: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Zonal',
-    required: true
+    trim: true
   },
   direccion: {
     type: String,
     trim: true
   },
+  telefono: {
+    type: String,
+    trim: true
+  },
+  email: {
+    type: String,
+    lowercase: true,
+    trim: true,
+    match: [/^\S+@\S+\.\S+$/, 'Email inválido']
+  },
   activo: {
     type: Boolean,
     default: true
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
   }
+}, {
+  timestamps: true
 });
 
-module.exports = mongoose.model('Sede', SedeSchema);
+// Índice de búsqueda
+sedeSchema.index({ nombre: 'text' });
+
+module.exports = mongoose.model('Sede', sedeSchema);
