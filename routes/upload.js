@@ -409,4 +409,282 @@ router.post('/bloques/generar-preview', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/upload/bloques/confirmar-preview
+ * Guarda definitivamente los datos del preview editado en la BD
+ */
+router.post('/bloques/confirmar-preview', async (req, res) => {
+  try {
+    const { bloques, horarios } = req.body;
+    
+    if (!bloques || !horarios) {
+      return res.status(400).json({
+        success: false,
+        message: 'Datos incompletos'
+      });
+    }
+    
+    console.log('💾 Guardando preview confirmado en BD...');
+    
+    const Periodo = require('../models/Periodo');
+    const Carrera = require('../models/Carrera');
+    const Curso = require('../models/Curso');
+    const Profesor = require('../models/Profesor');
+    const Aula = require('../models/Aula');
+    const Sede = require('../models/Sede');
+    const Asignacion = require('../models/Asignacion');
+    const Horario = require('../models/Horario');
+    
+    const bloquesGuardados = [];
+    const asignacionesGuardadas = [];
+    const horariosGuardados = [];
+    const conflictos = [];
+    
+    // Mapa de IDs temporales a IDs reales
+    const bloqueIdMap = {};
+    const asignacionIdMap = {};
+    
+    // 1. Guardar bloques
+    for (const bloqueTemp of bloques) {
+      try {
+        // Buscar o crear período
+        let periodo = await Periodo.findOne({ nombre: bloqueTemp.periodo });
+        if (!periodo) {
+          periodo = await Periodo.create({
+            codigo: bloqueTemp.periodo.replace(/\s+/g, '-').toUpperCase(),
+            nombre: bloqueTemp.periodo,
+            fechaInicio: new Date(bloqueTemp.fechaInicio),
+            fechaFin: new Date(bloqueTemp.fechaFin),
+            estado: 'planificado'
+          });
+        }
+        
+        // Buscar o crear carrera
+        let carrera = await Carrera.findOne({ nombre: new RegExp(bloqueTemp.carrera, 'i') });
+        if (!carrera) {
+          carrera = await Carrera.create({
+            nombre: bloqueTemp.carrera,
+            codigo: bloqueTemp.carrera.substring(0, 3).toUpperCase(),
+            activo: true
+          });
+        }
+        
+        // Verificar si ya existe
+        let bloque = await Bloque.findOne({ codigo: bloqueTemp.codigo });
+        
+        if (!bloque) {
+          // Crear bloque
+          bloque = await Bloque.create({
+            periodo: periodo._id,
+            carrera: carrera._id,
+            codigo: bloqueTemp.codigo,
+            semestreAcademico: bloqueTemp.semestre,
+            fechaInicio: new Date(bloqueTemp.fechaInicio),
+            fechaFin: new Date(bloqueTemp.fechaFin),
+            capacidadMax: bloqueTemp.capacidadMax,
+            totalInscritos: 0,
+            estado: 'planificado',
+            subPeriodo: bloqueTemp.turno.toLowerCase()
+          });
+        }
+        
+        bloqueIdMap[bloqueTemp.id] = bloque._id;
+        bloquesGuardados.push(bloque);
+      } catch (error) {
+        console.error(`Error guardando bloque ${bloqueTemp.codigo}:`, error.message);
+      }
+    }
+    
+    // 2. Agrupar horarios por asignación única
+    const asignacionesMap = new Map();
+    
+    horarios.forEach(hora => {
+      const key = `${hora.bloqueId}_${hora.curso}_${hora.profesor}`;
+      if (!asignacionesMap.has(key)) {
+        asignacionesMap.set(key, {
+          bloqueId: hora.bloqueId,
+          curso: hora.curso,
+          profesor: hora.profesor,
+          horarios: []
+        });
+      }
+      asignacionesMap.get(key).horarios.push(hora);
+    });
+    
+    // 3. Crear asignaciones y horarios
+    for (const [key, asigData] of asignacionesMap) {
+      try {
+        const bloqueReal = bloqueIdMap[asigData.bloqueId];
+        if (!bloqueReal) continue;
+        
+        const bloqueData = bloques.find(b => b.id === asigData.bloqueId);
+        
+        // Buscar o crear curso
+        let curso = await Curso.findOne({ nombre: new RegExp(asigData.curso, 'i') });
+        if (!curso) {
+          const carrera = await Carrera.findOne({ nombre: new RegExp(bloqueData.carrera, 'i') });
+          curso = await Curso.create({
+            nombre: asigData.curso,
+            carrera: carrera._id,
+            semestre: bloqueData.semestre,
+            horasSemanales: 4,
+            creditos: 3
+          });
+        }
+        
+        // Buscar o crear profesor
+        const nombreProf = asigData.profesor.replace('Prof. ', '');
+        const nombrePartes = nombreProf.split(' ');
+        let profesor = await Profesor.findOne({ 
+          nombres: new RegExp(nombrePartes[0], 'i')
+        });
+        
+        if (!profesor) {
+          profesor = await Profesor.create({
+            nombres: nombrePartes[0],
+            apellidos: nombrePartes.slice(1).join(' ') || nombrePartes[0],
+            especialidad: asigData.curso,
+            activo: true
+          });
+        }
+        
+        // Crear asignación
+        const asignacion = await Asignacion.create({
+          bloque: bloqueReal,
+          curso: curso._id,
+          profesor: profesor._id,
+          observaciones: 'Importado desde preview confirmado'
+        });
+        
+        asignacionesGuardadas.push(asignacion);
+        
+        // Guardar horarios de esta asignación
+        for (const horaTemp of asigData.horarios) {
+          try {
+            // Buscar o crear aula
+            let aula = await Aula.findOne({ codigo: horaTemp.aula });
+            if (!aula) {
+              let sede = await Sede.findOne();
+              if (!sede) {
+                sede = await Sede.create({
+                  nombre: 'Sede Principal',
+                  direccion: 'Lima',
+                  activo: true
+                });
+              }
+              
+              aula = await Aula.create({
+                codigo: horaTemp.aula,
+                nombre: `Aula ${horaTemp.aula}`,
+                sede: sede._id,
+                capacidad: 30,
+                tipo: 'Aula Común',
+                activo: true
+              });
+            }
+            
+            // VALIDAR CONFLICTOS
+            const conflicto = await validarConflictoHorario(
+              aula._id,
+              profesor._id,
+              horaTemp.dia,
+              horaTemp.horaInicio,
+              horaTemp.horaFin
+            );
+            
+            if (conflicto) {
+              conflictos.push({
+                tipo: conflicto.tipo,
+                mensaje: conflicto.mensaje,
+                horario: horaTemp
+              });
+              continue; // Saltar este horario si hay conflicto
+            }
+            
+            // Crear horario
+            const horario = await Horario.create({
+              asignacion: asignacion._id,
+              aula: aula._id,
+              diaSemana: horaTemp.dia,
+              horaInicio: horaTemp.horaInicio,
+              horaFin: horaTemp.horaFin,
+              tipoSesion: horaTemp.tipo || 'Teoría'
+            });
+            
+            horariosGuardados.push(horario);
+          } catch (error) {
+            console.error(`Error guardando horario:`, error.message);
+          }
+        }
+      } catch (error) {
+        console.error(`Error en asignación:`, error.message);
+      }
+    }
+    
+    console.log(`✅ Guardado completo: ${bloquesGuardados.length} bloques, ${horariosGuardados.length} horarios`);
+    
+    res.json({
+      success: true,
+      resultado: {
+        bloques: bloquesGuardados.length,
+        asignaciones: asignacionesGuardadas.length,
+        horarios: horariosGuardados.length,
+        conflictos: conflictos.length
+      },
+      conflictos: conflictos,
+      message: conflictos.length > 0
+        ? `⚠️ Guardado con ${conflictos.length} conflictos detectados`
+        : `✅ Importación confirmada: ${bloquesGuardados.length} bloques, ${horariosGuardados.length} horarios`
+    });
+
+  } catch (error) {
+    console.error('Error al confirmar preview:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al guardar: ' + error.message
+    });
+  }
+});
+
+/**
+ * Validar conflictos de horario
+ */
+async function validarConflictoHorario(aulaId, profesorId, dia, horaInicio, horaFin) {
+  const Horario = require('../models/Horario');
+  const Asignacion = require('../models/Asignacion');
+  
+  // Buscar horarios en el mismo día y rango de horas
+  const horariosExistentes = await Horario.find({
+    diaSemana: dia,
+    $or: [
+      { aula: aulaId },
+      { asignacion: { $in: await Asignacion.find({ profesor: profesorId }).select('_id') } }
+    ]
+  }).populate('asignacion');
+  
+  for (const horario of horariosExistentes) {
+    // Verificar si hay solapamiento de horarios
+    if (
+      (horaInicio >= horario.horaInicio && horaInicio < horario.horaFin) ||
+      (horaFin > horario.horaInicio && horaFin <= horario.horaFin) ||
+      (horaInicio <= horario.horaInicio && horaFin >= horario.horaFin)
+    ) {
+      if (horario.aula.toString() === aulaId.toString()) {
+        return {
+          tipo: 'aula',
+          mensaje: `Conflicto: Aula ya ocupada en ${dia} ${horaInicio}-${horaFin}`
+        };
+      }
+      if (horario.asignacion && horario.asignacion.profesor.toString() === profesorId.toString()) {
+        return {
+          tipo: 'profesor',
+          mensaje: `Conflicto: Profesor ya tiene clase en ${dia} ${horaInicio}-${horaFin}`
+        };
+      }
+    }
+  }
+  
+  return null;
+}
+
 module.exports = router;
