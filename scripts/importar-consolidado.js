@@ -137,7 +137,7 @@ async function importar() {
       horasTaller: parseNum(row[18]),
       horasVirtual: parseNum(row[19]),
       
-      evaluacion_semestral: row[20]?.trim(),
+      evaluacion_semestral: parseNum(row[20]),
       horasTotal: parseNum(row[21]),
       horasSemestre: parseNum(row[22]),
       creditos: parseNum(row[23]),

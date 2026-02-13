@@ -103,8 +103,9 @@ const cursoSchema = new mongoose.Schema({
   
   // Col 21: EVALUACIÓN SEMESTRAL
   evaluacion_semestral: {
-    type: String,
-    trim: true
+    type: Number,
+    default: 0,
+    min: 0
   },
   
   // Col 22: TOTAL HORAS (Semanal o total?)
