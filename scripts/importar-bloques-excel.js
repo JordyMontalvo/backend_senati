@@ -35,13 +35,15 @@ async function importarBloquesDesdeExcel(excelPath) {
     for (const [index, fila] of datos.entries()) {
       try {
         // Buscar o crear el período
-        let periodo = await Periodo.findOne({ nombre: fila['Período'] || fila.Periodo });
+        const nombrePeriodo = fila['Período'] || fila.Periodo;
+        let periodo = await Periodo.findOne({ nombre: nombrePeriodo });
         if (!periodo) {
           periodo = await Periodo.create({
-            nombre: fila['Período'] || fila.Periodo,
+            codigo: nombrePeriodo.replace(/\s+/g, '-').toUpperCase(), // Convertir "2026-I" a "2026-I"
+            nombre: nombrePeriodo,
             fechaInicio: parsearFecha(fila['Fecha Inicio']),
             fechaFin: parsearFecha(fila['Fecha Fin']),
-            activo: true
+            estado: 'planificado'
           });
           console.log(`✅ Período creado: ${periodo.nombre}`);
         }
