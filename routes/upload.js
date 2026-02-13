@@ -9,11 +9,18 @@ const AsignadorInteligente = require('../services/asignador-inteligente');
 const Bloque = require('../models/Bloque');
 
 // Configurar multer para manejar archivos
+// En Vercel (serverless), solo /tmp es escribible
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
-    const uploadDir = path.join(__dirname, '../uploads');
+    // Usar /tmp en entornos serverless (Vercel, AWS Lambda), o uploads en local
+    const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME;
+    const uploadDir = isServerless ? '/tmp' : path.join(__dirname, '../uploads');
+    
     try {
-      await fs.mkdir(uploadDir, { recursive: true });
+      // Solo intentar crear directorio si no es /tmp (que ya existe)
+      if (!isServerless) {
+        await fs.mkdir(uploadDir, { recursive: true });
+      }
       cb(null, uploadDir);
     } catch (error) {
       cb(error);
