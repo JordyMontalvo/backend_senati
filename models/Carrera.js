@@ -17,15 +17,16 @@ const carreraSchema = new mongoose.Schema({
     required: [true, 'El nombre de la carrera es requerido'],
     trim: true
   },
+  escuela_profesional: {
+    type: String,
+    trim: true,
+    uppercase: true
+  },
   nivel: {
     type: String,
     trim: true
   },
   grado: {
-    type: String,
-    trim: true
-  },
-  catalogo: {
     type: String,
     trim: true
   },
