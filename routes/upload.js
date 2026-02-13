@@ -547,24 +547,29 @@ router.post('/bloques/confirmar-preview', async (req, res) => {
           });
         }
         
-        // Verificar si ya existe
-        let bloque = await Bloque.findOne({ codigo: bloqueTemp.codigo });
+        // Verificar si ya existe el bloque en este periodo
+        const bloqueExistente = await Bloque.findOne({ 
+          codigo: bloqueTemp.codigo,
+          periodo: periodo._id 
+        });
         
-        if (!bloque) {
-          // Crear bloque
-          bloque = await Bloque.create({
+        if (bloqueExistente) {
+          throw new Error(`El código de bloque '${bloqueTemp.codigo}' ya existe en el periodo seleccionado. No se permiten duplicados.`);
+        }
+
+        // Crear bloque nuevo
+        const bloque = await Bloque.create({
             periodo: periodo._id,
             carrera: carrera._id,
             codigo: bloqueTemp.codigo,
             semestreAcademico: bloqueTemp.semestre,
             fechaInicio: new Date(bloqueTemp.fechaInicio),
             fechaFin: new Date(bloqueTemp.fechaFin),
-            capacidadMax: bloqueTemp.capacidadMax,
+            capacidadMax: bloqueTemp.capacidadMax || 30,
             totalInscritos: 0,
             estado: 'planificado',
-            subPeriodo: bloqueTemp.turno.toLowerCase()
-          });
-        }
+            subPeriodo: (bloqueTemp.turno || 'mañana').toLowerCase() // Guardar turno preferente
+        });
         
         bloqueIdMap[bloqueTemp.id] = bloque._id;
         bloquesGuardados.push(bloque);
