@@ -21,7 +21,13 @@ router.get('/', async (req, res) => {
       .populate({
         path: 'asignacion',
         populate: [
-          { path: 'bloque' },
+          { 
+            path: 'bloque',
+            populate: [
+              { path: 'carrera' },
+              { path: 'periodo' }
+            ]
+          },
           { path: 'curso' },
           { path: 'profesor' }
         ]
