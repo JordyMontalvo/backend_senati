@@ -4,11 +4,18 @@ const Horario = require('../models/Horario');
 
 router.get('/', async (req, res) => {
   try {
-    const { asignacion, aula, diaSemana } = req.query;
+    const { asignacion, aula, diaSemana, bloque } = req.query;
     const query = {};
     if (asignacion) query.asignacion = asignacion;
     if (aula) query.aula = aula;
     if (diaSemana) query.diaSemana = diaSemana;
+    
+    // Si filtran por bloque, necesitamos buscar las asignaciones de ese bloque primero
+    if (bloque) {
+      const Asignacion = require('../models/Asignacion');
+      const asignacionesBloque = await Asignacion.find({ bloque: bloque }).select('_id');
+      query.asignacion = { $in: asignacionesBloque.map(a => a._id) };
+    }
 
     const horarios = await Horario.find(query)
       .populate({

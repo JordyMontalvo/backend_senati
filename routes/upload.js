@@ -294,17 +294,40 @@ router.post('/bloques/generar-preview', async (req, res) => {
     const asignacionesTemp = [];
     const horariosTemp = [];
     
-    // Procesamiento simulado (sin guardar en BD)
+    // Cargar datos REALES de la base de datos para usar en el preview
+    const Curso = require('../models/Curso');
+    const Profesor = require('../models/Profesor');
+    const Aula = require('../models/Aula');
+    const Carrera = require('../models/Carrera');
+
+    console.log('📚 Cargando datos maestros de MongoDB...');
+    const cursosDb = await Curso.find().populate('carrera');
+    const profesoresDb = await Profesor.find({ activo: true });
+    const aulasDb = await Aula.find({ activo: true });
+    const carrerasDb = await Carrera.find({ activo: true });
+
+    console.log(`✅ Datos cargados: ${cursosDb.length} cursos, ${profesoresDb.length} profesores, ${aulasDb.length} aulas`);
+
+    // Procesamiento con datos REALES
     for (const fila of datos) {
       const bloqueId = `temp_bloque_${bloquesTemp.length + 1}`;
       
+      // Normalizar nombre de carrera del Excel
+      const nombreCarreraExcel = (fila.Carrera || '').trim();
+      
+      // Buscar carrera en DB (coincidencia parcial insensible a mayúsculas)
+      const carreraReal = carrerasDb.find(c => 
+        c.nombre.toLowerCase().includes(nombreCarreraExcel.toLowerCase()) || 
+        nombreCarreraExcel.toLowerCase().includes(c.nombre.toLowerCase())
+      );
+
       // Crear bloque temporal
       const bloqueTemp = {
         id: bloqueId,
         codigo: fila['Código'] || fila.Codigo,
         periodo: fila['Período'] || fila.Periodo,
         semestre: fila.Semestre,
-        carrera: fila.Carrera,
+        carrera: carreraReal ? carreraReal.nombre : nombreCarreraExcel, // Usar nombre real si existe
         turno: fila.Turno,
         capacidadMax: fila['Capacidad Máxima'] || fila['Capacidad Maxima'] || 30,
         fechaInicio: fila['Fecha Inicio'],
@@ -313,65 +336,120 @@ router.post('/bloques/generar-preview', async (req, res) => {
       
       bloquesTemp.push(bloqueTemp);
       
-      // Generar asignaciones y horarios simulados para este bloque
-      const cursosSimulados = [
-        { nombre: 'Matemática I', profesor: 'Prof. Luis Ramírez' },
-        { nombre: 'Comunicación I', profesor: 'Prof. Diana Huamán' },
-        { nombre: 'Informática I', profesor: 'Prof. Carmen Torres' },
-        { nombre: 'Física I', profesor: 'Prof. Jorge Castillo' }
-      ];
+      // 1. Obtener cursos del semestre correspondiente
+      let cursosDelBloque = [];
       
-      const dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
+      if (carreraReal) {
+        // Filtrar cursos de la carrera y semestre
+        cursosDelBloque = cursosDb.filter(c => 
+          c.carrera._id.toString() === carreraReal._id.toString() && 
+          c.semestre === parseInt(bloqueTemp.semestre)
+        );
+      }
+
+      // Si no hay cursos reales (ej. carrera nueva o semestre sin cursos), usar genéricos
+      if (cursosDelBloque.length === 0) {
+        console.warn(`⚠️ No se encontraron cursos para ${bloqueTemp.carrera} Semestre ${bloqueTemp.semestre}. Usando genéricos.`);
+        cursosDelBloque = [
+          { nombre: `Curso Técnico I (Sem ${bloqueTemp.semestre})`, creditos: 3 },
+          { nombre: `Taller Práctico I (Sem ${bloqueTemp.semestre})`, creditos: 4 },
+          { nombre: `Habilidades Blandas`, creditos: 2 },
+          { nombre: `Inglés Técnico`, creditos: 2 }
+        ];
+      }
+
+      // Configuración de horarios por turno
+      const dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
       const horasPorTurno = {
         'mañana': [
-          { inicio: '07:00', fin: '09:00' },
-          { inicio: '09:00', fin: '11:00' },
-          { inicio: '11:00', fin: '13:00' }
+          { inicio: '07:00', fin: '09:00' }, { inicio: '09:00', fin: '11:00' }, { inicio: '11:00', fin: '13:00' }
         ],
         'tarde': [
-          { inicio: '14:00', fin: '16:00' },
-          { inicio: '16:00', fin: '18:00' },
-          { inicio: '18:00', fin: '20:00' }
+          { inicio: '14:00', fin: '16:00' }, { inicio: '16:00', fin: '18:00' }, { inicio: '18:00', fin: '20:00' }
         ],
         'noche': [
-          { inicio: '19:00', fin: '21:00' },
-          { inicio: '21:00', fin: '23:00' }
+          { inicio: '18:30', fin: '20:00' }, { inicio: '20:00', fin: '21:30' }, { inicio: '21:30', fin: '23:00' }
         ]
       };
       
-      const turnoLower = bloqueTemp.turno.toLowerCase();
-      const bloqueHorarios = horasPorTurno[turnoLower] || horasPorTurno.mañana;
+      const turnoLower = (bloqueTemp.turno || 'mañana').toLowerCase();
+      const slotsHorarios = horasPorTurno[turnoLower] || horasPorTurno.mañana;
       
-      // Crear horarios para cada curso
-      cursosSimulados.forEach((curso, cursoIdx) => {
-        const asignacionId = `temp_asig_${asignacionesTemp.length + 1}`;
+      // Asignar cursos a slots disponibles
+      let slotIndex = 0;
+      let diaIndex = 0;
+
+      cursosDelBloque.forEach((curso, idx) => {
+        // Seleccionar Profesor (aleatorio de los disponibles o "Por asignar")
+        // Intenta buscar por especialidad si el curso tiene nombre real
+        let profesorAsignado = profesoresDb.find(p => 
+          p.especialidad && curso.nombre && p.especialidad.includes(curso.nombre)
+        );
         
+        if (!profesorAsignado && profesoresDb.length > 0) {
+          // Si no hay especialista, asignar uno aleatorio para balancear carga (simulado con módulo)
+          profesorAsignado = profesoresDb[(idx + bloquesTemp.length) % profesoresDb.length];
+        }
+
+        const nombreProfesor = profesorAsignado 
+          ? `${profesorAsignado.nombres} ${profesorAsignado.apellidos}` 
+          : 'Profesor Por Asignar';
+
+        // Crear Asignación Temporal
+        const asignacionId = `temp_asig_${asignacionesTemp.length + 1}`;
         asignacionesTemp.push({
           id: asignacionId,
           bloqueId: bloqueId,
           curso: curso.nombre,
-          profesor: curso.profesor
+          profesor: nombreProfesor
         });
-        
-        // 2-3 sesiones por semana
-        const sesiones = Math.min(2, dias.length);
-        for (let s = 0; s < sesiones; s++) {
-          const dia = dias[s];
-          const horario = bloqueHorarios[cursoIdx % bloqueHorarios.length];
-          
+
+        // Determinar carga horaria (sesiones por semana)
+        // Cursos de 4+ créditos suelen tener más horas
+        const sesionesPorSemana = curso.creditos >= 4 ? 2 : 1;
+
+        for (let s = 0; s < sesionesPorSemana; s++) {
+          // Rotar días y horas para distribuir carga
+          const dia = dias[diaIndex % 6]; // Lunes a Sábado
+          const horario = slotsHorarios[slotIndex % slotsHorarios.length];
+
+          // Seleccionar Aula
+          // Si el curso parece práctico (Lab, Taller, Software), buscar Laboratorio
+          const esPractico = /Laboratorio|Taller|Software|Programación|Desarrollo|Datos|IA/.test(curso.nombre);
+          let aulaAsignada;
+
+          if (esPractico) {
+            const laboratorios = aulasDb.filter(a => a.tipo === 'Laboratorio');
+            aulaAsignada = laboratorios.length > 0 
+              ? laboratorios[(idx + s) % laboratorios.length] 
+              : aulasDb[0];
+          } else {
+            const aulasTeoricas = aulasDb.filter(a => a.tipo !== 'Laboratorio');
+            aulaAsignada = aulasTeoricas.length > 0 
+              ? aulasTeoricas[(idx + s) % aulasTeoricas.length] 
+              : aulasDb[0];
+          }
+
           horariosTemp.push({
             id: `temp_hora_${horariosTemp.length + 1}`,
             asignacionId: asignacionId,
             bloqueId: bloqueId,
             bloque: bloqueTemp.codigo,
             curso: curso.nombre,
-            profesor: curso.profesor,
-            aula: `A-${101 + (cursoIdx * 2)}`,
+            profesor: nombreProfesor,
+            aula: aulaAsignada ? aulaAsignada.codigo : 'AULA-GEN',
             dia: dia,
             horaInicio: horario.inicio,
             horaFin: horario.fin,
-            tipo: cursoIdx === 0 ? 'Teoría' : cursoIdx === 1 ? 'Taller' : 'Laboratorio'
+            tipo: esPractico ? 'Laboratorio' : 'Teoría'
           });
+
+          // Avanzar slot para la siguiente sesión del siguiente curso
+          slotIndex++;
+          if (slotIndex >= slotsHorarios.length) {
+            slotIndex = 0;
+            diaIndex++; // Cambiar de día si se llenan los slots del turno
+          }
         }
       });
     }
