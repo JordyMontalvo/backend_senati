@@ -46,12 +46,14 @@ async function importar() {
   
   console.log('🚀 Iniciando importación...');
 
+  // Acumulador para operaciones masivas
+  const bulkOps = [];
+  const BATCH_SIZE = 500;
+
   for await (const line of rl) {
     lineCount++;
     if (lineCount === 1) continue; // Saltar título
     
-    // Split por ;
-    // Nota: Si hay campos con ; dentro de comillas, esto fallará. Asumiendo CSV simple.
     const row = line.split(';'); 
     
     if (lineCount === 2) {
@@ -89,7 +91,6 @@ async function importar() {
         });
         await carrera.save();
         carrerasCount++;
-        // console.log(`✨ Nueva Carrera: ${nombreCarrera}`);
       } else {
         // Actualizar datos por si cambiaron
         carrera.escuela_profesional = escuela;
@@ -143,17 +144,28 @@ async function importar() {
       numero: row[13]?.trim()
     };
 
-    // Upsert Curso
-    await Curso.findOneAndUpdate(
-      { codigo: id },
-      cursoData,
-      { upsert: true, new: true }
-    );
-    cursosCount++;
+    // Agregar a lote
+    bulkOps.push({
+      updateOne: {
+        filter: { codigo: id },
+        update: { $set: cursoData },
+        upsert: true
+      }
+    });
     
-    if (cursosCount % 100 === 0) {
-        process.stdout.write(`Processed ${cursosCount} courses...\r`);
+    // Ejecutar lote si alcanza tamaño
+    if (bulkOps.length >= BATCH_SIZE) {
+      await Curso.bulkWrite(bulkOps);
+      cursosCount += bulkOps.length;
+      bulkOps.length = 0; // Limpiar array
+      process.stdout.write(`Processed ${cursosCount} rows...\r`);
     }
+  }
+  
+  // Procesar remanentes
+  if (bulkOps.length > 0) {
+    await Curso.bulkWrite(bulkOps);
+    cursosCount += bulkOps.length;
   }
   
   console.log(`\n✅ Importación Finalizada.`);
