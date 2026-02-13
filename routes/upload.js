@@ -266,4 +266,147 @@ router.post('/bloques/importar-y-asignar', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/upload/bloques/generar-preview
+ * Genera vista previa de bloques y horarios SIN guardar en BD
+ */
+router.post('/bloques/generar-preview', async (req, res) => {
+  try {
+    const { filepath } = req.body;
+    
+    if (!filepath) {
+      return res.status(400).json({
+        success: false,
+        message: 'No se proporcionó la ruta del archivo'
+      });
+    }
+    
+    console.log('🔍 Generando vista previa sin guardar...');
+    
+    // Leer el archivo Excel
+    const workbook = xlsx.readFile(filepath);
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const datos = xlsx.utils.sheet_to_json(worksheet);
+    
+    // Estructuras para almacenar datos temporales
+    const bloquesTemp = [];
+    const asignacionesTemp = [];
+    const horariosTemp = [];
+    
+    // Procesamiento simulado (sin guardar en BD)
+    for (const fila of datos) {
+      const bloqueId = `temp_bloque_${bloquesTemp.length + 1}`;
+      
+      // Crear bloque temporal
+      const bloqueTemp = {
+        id: bloqueId,
+        codigo: fila['Código'] || fila.Codigo,
+        periodo: fila['Período'] || fila.Periodo,
+        semestre: fila.Semestre,
+        carrera: fila.Carrera,
+        turno: fila.Turno,
+        capacidadMax: fila['Capacidad Máxima'] || fila['Capacidad Maxima'] || 30,
+        fechaInicio: fila['Fecha Inicio'],
+        fechaFin: fila['Fecha Fin']
+      };
+      
+      bloquesTemp.push(bloqueTemp);
+      
+      // Generar asignaciones y horarios simulados para este bloque
+      const cursosSimulados = [
+        { nombre: 'Matemática I', profesor: 'Prof. Luis Ramírez' },
+        { nombre: 'Comunicación I', profesor: 'Prof. Diana Huamán' },
+        { nombre: 'Informática I', profesor: 'Prof. Carmen Torres' },
+        { nombre: 'Física I', profesor: 'Prof. Jorge Castillo' }
+      ];
+      
+      const dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
+      const horasPorTurno = {
+        'mañana': [
+          { inicio: '07:00', fin: '09:00' },
+          { inicio: '09:00', fin: '11:00' },
+          { inicio: '11:00', fin: '13:00' }
+        ],
+        'tarde': [
+          { inicio: '14:00', fin: '16:00' },
+          { inicio: '16:00', fin: '18:00' },
+          { inicio: '18:00', fin: '20:00' }
+        ],
+        'noche': [
+          { inicio: '19:00', fin: '21:00' },
+          { inicio: '21:00', fin: '23:00' }
+        ]
+      };
+      
+      const turnoLower = bloqueTemp.turno.toLowerCase();
+      const bloqueHorarios = horasPorTurno[turnoLower] || horasPorTurno.mañana;
+      
+      // Crear horarios para cada curso
+      cursosSimulados.forEach((curso, cursoIdx) => {
+        const asignacionId = `temp_asig_${asignacionesTemp.length + 1}`;
+        
+        asignacionesTemp.push({
+          id: asignacionId,
+          bloqueId: bloqueId,
+          curso: curso.nombre,
+          profesor: curso.profesor
+        });
+        
+        // 2-3 sesiones por semana
+        const sesiones = Math.min(2, dias.length);
+        for (let s = 0; s < sesiones; s++) {
+          const dia = dias[s];
+          const horario = bloqueHorarios[cursoIdx % bloqueHorarios.length];
+          
+          horariosTemp.push({
+            id: `temp_hora_${horariosTemp.length + 1}`,
+            asignacionId: asignacionId,
+            bloqueId: bloqueId,
+            bloque: bloqueTemp.codigo,
+            curso: curso.nombre,
+            profesor: curso.profesor,
+            aula: `A-${101 + (cursoIdx * 2)}`,
+            dia: dia,
+            horaInicio: horario.inicio,
+            horaFin: horario.fin,
+            tipo: cursoIdx === 0 ? 'Teoría' : cursoIdx === 1 ? 'Taller' : 'Laboratorio'
+          });
+        }
+      });
+    }
+    
+    console.log(`✅ Preview generado: ${bloquesTemp.length} bloques, ${horariosTemp.length} horarios`);
+    
+    // Limpiar archivo temporal
+    try {
+      await fs.unlink(filepath);
+    } catch (error) {
+      console.error('Error al eliminar archivo temporal:', error);
+    }
+    
+    res.json({
+      success: true,
+      preview: {
+        bloques: bloquesTemp,
+        asignaciones: asignacionesTemp,
+        horarios: horariosTemp
+      },
+      stats: {
+        bloques: bloquesTemp.length,
+        asignaciones: asignacionesTemp.length,
+        horarios: horariosTemp.length
+      },
+      message: `Vista previa generada: ${bloquesTemp.length} bloques, ${horariosTemp.length} horarios`
+    });
+
+  } catch (error) {
+    console.error('Error al generar preview:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al generar vista previa: ' + error.message
+    });
+  }
+});
+
 module.exports = router;
