@@ -123,8 +123,14 @@ async function importar() {
       
       semestre: row[12]?.trim() || 'SIN CICLO',
       materia: row[13]?.trim() || 'SIN MATERIA',
-      nombre: row[14]?.trim() || 'SIN NOMBRE',
-      descripcion: row[15]?.trim(),
+      
+      // CORRECCIÓN: Col 16 (idx 15) es el Nombre Real ("DESCRIPCION DE CURSO")
+      nombre: row[15]?.trim() || 'SIN NOMBRE',
+      
+      // CORRECCIÓN: Col 15 (idx 14) es el Número/Código ("CURSO")
+      numero: row[14]?.trim(),
+      
+      // descripcion: row[15]?.trim(), // Ya usado como nombre
       
       semanas: parseInt(row[16]) || 0,
       horasTeoria: parseNum(row[17]),
@@ -140,8 +146,7 @@ async function importar() {
       comentarios: row[26]?.trim(),
       contenido_curricular: row[27]?.trim(),
       
-      // Generar numero basado en materia si no existe mejor dato
-      numero: row[13]?.trim()
+      // Generar numero basado en materia si no existe mejor dato (ELIMINADO por redundancia y error)
     };
 
     // Agregar a lote
