@@ -11,6 +11,11 @@ const sedeSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  zonal: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Zonal',
+    required: [true, 'La sede debe pertenecer a una zonal']
+  },
   telefono: {
     type: String,
     trim: true
