@@ -87,6 +87,7 @@ app.use('/api/horarios', horariosRoutes);
 app.use('/api/estudiantes', estudiantesRoutes);
 app.use('/api/upload', require('./routes/upload'));
 app.use('/api/matriculas', matriculasRoutes);
+app.use('/api/chatbot', require('./routes/chatbot'));
 
 app.use('/api/ubicaciones', require('./routes/ubicaciones'));
 

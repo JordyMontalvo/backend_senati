@@ -155,38 +155,38 @@ class AsignadorInteligente {
    * Selecciona el profesor más adecuado para un curso
    */
   async seleccionarProfesorOptimo(curso) {
-    // Estrategia 1: Buscar por especialidad
-    let profesores = await Profesor.find({
+    // V2.0: Heurística multivariable
+    // 1. Buscar especialistas activos
+    let especialistas = await Profesor.find({
       activo: true,
       especialidad: new RegExp(curso.nombre, 'i')
     });
     
-    if (profesores.length > 0) {
-      return profesores[0]; // Retornar el primero que coincida
-    }
-    
-    // Estrategia 2: Buscar profesor menos cargado
-    const todosProfesores = await Profesor.find({ activo: true });
-    
-    if (todosProfesores.length === 0) {
-      return null;
-    }
-    
-    // Calcular carga de trabajo para cada profesor
-    const cargaPorProfesor = await Promise.all(
-      todosProfesores.map(async (profesor) => {
-        const asignaciones = await Asignacion.countDocuments({
-          profesor: profesor._id
+    // 2. Si no hay especialistas directos, buscar por palabras clave (ej: "Redes", "Contabilidad")
+    if (especialistas.length === 0 && curso.nombre.split(' ').length > 1) {
+      const keywords = curso.nombre.split(' ').filter(w => w.length > 4);
+      if (keywords.length > 0) {
+        especialistas = await Profesor.find({
+          activo: true,
+          especialidad: new RegExp(keywords.join('|'), 'i')
         });
-        
-        return { profesor, carga: asignaciones };
-      })
-    );
+      }
+    }
+
+    // 3. De los candidatos, elegir el que tenga menos carga para balancear
+    const candidatos = especialistas.length > 0 ? especialistas : await Profesor.find({ activo: true });
     
-    // Ordenar por menor carga
-    cargaPorProfesor.sort((a, b) => a.carga - b.carga);
+    if (candidatos.length === 0) return null;
+
+    const cargaPromesa = candidatos.map(async (p) => {
+      const count = await Asignacion.countDocuments({ profesor: p._id });
+      return { p, count };
+    });
+
+    const resultados = await Promise.all(cargaPromesa);
+    resultados.sort((a, b) => a.count - b.count);
     
-    return cargaPorProfesor[0].profesor;
+    return resultados[0].p;
   }
 
   /**
@@ -194,91 +194,82 @@ class AsignadorInteligente {
    */
   async generarHorariosOptimos(asignacion, bloque, curso) {
     const turno = (bloque.subPeriodo || 'mañana').toLowerCase();
-    const configHorario = this.horariosPorTurno[turno] || this.horariosPorTurno.mañana;
+    const config = this.horariosPorTurno[turno] || this.horariosPorTurno.mañana;
     
-    // Calcular cuántas sesiones necesita el curso (basado en horas)
-    const horasSemanales = curso.horasSemanales || 4;
-    const sesionesNecesarias = Math.ceil(horasSemanales / 2); // Sesiones de 2 horas
+    const horasSemanales = curso.horasTotal || curso.horasSemanales || 4;
+    let sesionesDeseadas = Math.ceil(horasSemanales / 2); // Bloques de 2h (90-120 min)
     
-    let sesionesCreadas = 0;
-    
-    // Intentar asignar sesiones
-    for (const dia of configHorario.dias) {
-      if (sesionesCreadas >= sesionesNecesarias) break;
+    let creadas = 0;
+
+    // ESTRATEGIA: Intentar llenar los días secuencialmente para evitar huecos (gaps)
+    for (const dia of config.dias) {
+      if (creadas >= sesionesDeseadas) break;
       
-      for (const bloqueHorario of configHorario.bloques) {
-        if (sesionesCreadas >= sesionesNecesarias) break;
-        
-        // Buscar aula disponible
-        const aula = await this.buscarAulaDisponible(dia, bloqueHorario.inicio, bloqueHorario.fin);
-        
-        if (!aula) {
-          console.log(`   ⚠️  No hay aulas disponibles para ${dia} ${bloqueHorario.inicio}-${bloqueHorario.fin}`);
-          continue;
+      for (const slot of config.bloques) {
+        if (creadas >= sesionesDeseadas) break;
+
+        // 1. Determinar tipo de aula necesaria
+        // Si el curso tiene "taller", "laboratorio" o "práctica" en el nombre, buscar ese tipo
+        let tipoAulaRequerida = 'Aula Común';
+        const nombreLower = curso.nombre.toLowerCase();
+        if (nombreLower.includes('laboratorio') || nombreLower.includes('computo') || nombreLower.includes('software')) {
+          tipoAulaRequerida = 'Laboratorio';
+        } else if (nombreLower.includes('taller') || nombreLower.includes('maquinaria') || nombreLower.includes('mantenimiento')) {
+          tipoAulaRequerida = 'Taller';
         }
+
+        // 2. Buscar aula disponible del tipo correcto
+        const aula = await this.buscarAulaDisponible(dia, slot.inicio, slot.fin, tipoAulaRequerida);
         
-        // Verificar conflicto de profesor
-        const profesorOcupado = await this.verificarProfesorOcupado(
-          asignacion.profesor,
-          dia,
-          bloqueHorario.inicio,
-          bloqueHorario.fin
-        );
-        
-        if (profesorOcupado) {
-          continue;
-        }
-        
-        // Crear horario
+        if (!aula) continue;
+
+        // 3. Verificar profesor libre
+        const profOcupado = await this.verificarProfesorOcupado(asignacion.profesor, dia, slot.inicio, slot.fin);
+        if (profOcupado) continue;
+
+        // 4. Crear horario
         await Horario.create({
           asignacion: asignacion._id,
           aula: aula._id,
           diaSemana: dia,
-          horaInicio: bloqueHorario.inicio,
-          horaFin: bloqueHorario.fin,
-          tipoSesion: curso.tipo || 'Teoría'
+          horaInicio: slot.inicio,
+          horaFin: slot.fin,
+          tipoSesion: tipoAulaRequerida === 'Aula Común' ? 'Teoría' : tipoAulaRequerida
         });
-        
-        sesionesCreadas++;
+
+        creadas++;
         this.horariosCreados++;
       }
     }
-    
-    console.log(`   📅 Horarios creados: ${sesionesCreadas}/${sesionesNecesarias} sesiones`);
   }
 
   /**
    * Busca un aula disponible en un horario específico
    */
-  async buscarAulaDisponible(dia, horaInicio, horaFin) {
-    const aulas = await Aula.find({ activo: true });
+  async buscarAulaDisponible(dia, horaInicio, horaFin, tipo = 'Aula Común') {
+    // Priorizar el tipo solicitado, pero permitir 'Aula Común' como fallback si no es laboratorio
+    const query = { activo: true };
+    if (tipo !== 'Aula Común') query.tipo = tipo;
+
+    const aulas = await Aula.find(query);
     
     for (const aula of aulas) {
-      // Verificar si el aula está ocupada
-      const ocupada = await Horario.exists({
+      const busy = await Horario.exists({
         aula: aula._id,
         diaSemana: dia,
         $or: [
-          {
-            horaInicio: { $lte: horaInicio },
-            horaFin: { $gt: horaInicio }
-          },
-          {
-            horaInicio: { $lt: horaFin },
-            horaFin: { $gte: horaFin }
-          },
-          {
-            horaInicio: { $gte: horaInicio },
-            horaFin: { $lte: horaFin }
-          }
+          { horaInicio: { $lt: horaFin }, horaFin: { $gt: horaInicio } }
         ]
       });
       
-      if (!ocupada) {
-        return aula;
-      }
+      if (!busy) return aula;
     }
     
+    // Fallback search if specific type not found
+    if (tipo !== 'Aula Común') {
+        return this.buscarAulaDisponible(dia, horaInicio, horaFin, 'Aula Común');
+    }
+
     return null;
   }
 
@@ -286,29 +277,14 @@ class AsignadorInteligente {
    * Verifica si un profesor está ocupado
    */
   async verificarProfesorOcupado(profesorId, dia, horaInicio, horaFin) {
-    const asignaciones = await Asignacion.find({ profesor: profesorId });
-    const asignacionIds = asignaciones.map(a => a._id);
-    
-    const ocupado = await Horario.exists({
-      asignacion: { $in: asignacionIds },
+    const asigs = await Asignacion.find({ profesor: profesorId }).select('_id');
+    return await Horario.exists({
+      asignacion: { $in: asigs.map(a => a._id) },
       diaSemana: dia,
       $or: [
-        {
-          horaInicio: { $lte: horaInicio },
-          horaFin: { $gt: horaInicio }
-        },
-        {
-          horaInicio: { $lt: horaFin },
-          horaFin: { $gte: horaFin }
-        },
-        {
-          horaInicio: { $gte: horaInicio },
-          horaFin: { $lte: horaFin }
-        }
+        { horaInicio: { $lt: horaFin }, horaFin: { $gt: horaInicio } }
       ]
     });
-    
-    return ocupado;
   }
 
   /**
