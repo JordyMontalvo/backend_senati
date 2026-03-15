@@ -5,6 +5,7 @@ const Profesor = require('../models/Profesor');
 const Aula = require('../models/Aula');
 const Asignacion = require('../models/Asignacion');
 const Horario = require('../models/Horario');
+const logger = require('../utils/logger');
 
 /**
  * Sistema de Asignación Automática Inteligente con IA
@@ -53,14 +54,12 @@ class AsignadorInteligente {
    * Asigna automáticamente todo para una lista de bloques
    */
   async asignarAutomaticamente(bloquesIds) {
-    console.log('🤖 Iniciando asignación automática inteligente...\n');
-    
-    this.resetEstadisticas();
+    logger.ai(`Iniciando asignación automática para ${bloquesIds.length} bloques`);
     
     const bloques = await Bloque.find({ _id: { $in: bloquesIds } })
       .populate('carrera periodo');
     
-    console.log(`📦 Procesando ${bloques.length} bloques\n`);
+    logger.info(`📦 Cargados ${bloques.length} bloques desde la BD`);
     
     for (const bloque of bloques) {
       try {
@@ -81,24 +80,24 @@ class AsignadorInteligente {
    * Procesa un bloque individual
    */
   async procesarBloque(bloque) {
-    console.log(`\n📋 Procesando: ${bloque.codigo} - ${bloque.carrera.nombre}`);
+    logger.ai(`Procesando Bloque: ${bloque.codigo} (${bloque.carrera.nombre})`);
     
     // 1. Obtener cursos del semestre y carrera
     const cursos = await this.obtenerCursosParaBloque(bloque);
     
     if (cursos.length === 0) {
-      console.log(`⚠️  No hay cursos disponibles para este bloque`);
+      logger.warn(`No hay cursos curriculares definidos para el Bloque ${bloque.codigo} (Semestre ${bloque.semestreAcademico})`);
       return;
     }
     
-    console.log(`   📚 Cursos encontrados: ${cursos.length}`);
+    logger.info(`   📚 Cursos identificados: ${cursos.length} para el semestre actual`);
     
     // 2. Para cada curso, asignar profesor y crear horarios
     for (const curso of cursos) {
       try {
         await this.asignarCurso(bloque, curso);
       } catch (error) {
-        console.error(`   ❌ Error asignando curso ${curso.nombre}:`, error.message);
+        logger.error(`Falló asignación del curso ${curso.nombre} en bloque ${bloque.codigo}`, error.message);
       }
     }
   }
@@ -124,15 +123,17 @@ class AsignadorInteligente {
     });
     
     if (asignacionExistente) {
-      console.log(`   ⏭️  Curso ${curso.nombre} ya asignado`);
+      logger.ai(`   ⏭️  Curso ${curso.nombre} ya asignado`);
       return;
     }
     
     // 2. Seleccionar profesor inteligentemente
     const profesor = await this.seleccionarProfesorOptimo(curso);
     
-    if (!profesor) {
-      console.log(`   ⚠️  No hay profesores disponibles para ${curso.nombre}`);
+    if (profesor) {
+      logger.ai(`Heurística: ${profesor.nombres} ${profesor.apellidos} seleccionado por especialidad/carga baja`);
+    } else {
+      logger.warn(`Heurística: No se encontró docente idóneo para ${curso.nombre}`);
       return;
     }
     
@@ -141,11 +142,11 @@ class AsignadorInteligente {
       bloque: bloque._id,
       curso: curso._id,
       profesor: profesor._id,
-      observaciones: 'Asignado automáticamente por IA'
+      observaciones: 'Asignado automáticamente por IA Engine v2.1'
     });
     
     this.asignacionesCreadas++;
-    console.log(`   ✅ Asignado: ${curso.nombre} → ${profesor.nombres} ${profesor.apellidos}`);
+    logger.success(`Asignación vinculada: ${curso.nombre} @ ${profesor.apellidos}`);
     
     // 4. Generar horarios inteligentemente
     await this.generarHorariosOptimos(asignacion, bloque, curso);

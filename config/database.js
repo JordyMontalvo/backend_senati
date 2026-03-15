@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const logger = require('../utils/logger');
 
 const connectDB = async () => {
   try {
@@ -6,21 +7,21 @@ const connectDB = async () => {
       // Opciones de conexión (las versiones nuevas de Mongoose ya no necesitan muchas)
     });
 
-    console.log(`✅ MongoDB conectado: ${conn.connection.host}`);
+    logger.success(`MongoDB conectado: ${conn.connection.host}`);
     
     // Event listeners para la conexión
     mongoose.connection.on('error', (err) => {
-      console.error('❌ Error de MongoDB:', err);
+      logger.error('Error de MongoDB:', err);
     });
 
     mongoose.connection.on('disconnected', () => {
-      console.log('⚠️  MongoDB desconectado');
+      logger.warn('MongoDB desconectado');
     });
 
     // Manejo de cierre graceful
     process.on('SIGINT', async () => {
       await mongoose.connection.close();
-      console.log('MongoDB desconectado por finalización de la aplicación');
+      logger.info('MongoDB desconectado por finalización de la aplicación');
       process.exit(0);
     });
 

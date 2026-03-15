@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Horario = require('../models/Horario');
+const logger = require('../utils/logger');
 
 router.get('/', async (req, res) => {
   try {
@@ -126,6 +127,11 @@ router.post('/', async (req, res) => {
       const { tipo, detalle } = conflicto;
       const cursoNombre = detalle.asignacion?.curso?.nombre || 'Otro curso';
       const bloqueNombre = detalle.asignacion?.bloque?.codigo || 'Otro bloque';
+      const msg = tipo === 'aula' 
+        ? `Aula ocupada por ${cursoNombre} en NRC ${bloqueNombre}` 
+        : `Profesor ocupado dictando ${cursoNombre} en NRC ${bloqueNombre}`;
+      
+      logger.warn(`CONFLICTOR DETECTADO: ${msg}`);
       
       if (tipo === 'aula') {
         return res.status(409).json({ 

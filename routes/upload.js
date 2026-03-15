@@ -7,6 +7,7 @@ const xlsx = require('xlsx');
 const { importarBloquesDesdeExcel } = require('../scripts/importar-bloques-excel');
 const AsignadorInteligente = require('../services/asignador-inteligente');
 const Bloque = require('../models/Bloque');
+const logger = require('../utils/logger');
 
 // Configurar multer para manejar archivos
 // En Vercel (serverless), solo /tmp es escribible
@@ -60,6 +61,7 @@ router.post('/bloques', upload.single('file'), async (req, res) => {
     }
 
     const filePath = req.file.path;
+    logger.info(`Archivo Excel recibido: ${req.file.originalname} -> ${req.file.filename}`);
     
     // Leer el archivo Excel
     const workbook = xlsx.readFile(filePath);
@@ -223,10 +225,11 @@ router.post('/bloques/importar-y-asignar', async (req, res) => {
     }
     
     // 1. Importar bloques
-    console.log('📥 Importando bloques...');
+    logger.info(`📥 Iniciando Importación & Asignación combinada desde: ${filepath}`);
     const resultadoImportacion = await importarBloquesDesdeExcel(filepath);
     
     if (resultadoImportacion.exitosos === 0) {
+      logger.warn('Fallo en importación combinada: No se crearon bloques.');
       return res.json({
         success: false,
         message: 'No se importó ningún bloque',
@@ -235,7 +238,7 @@ router.post('/bloques/importar-y-asignar', async (req, res) => {
     }
     
     // 2. Asignar automáticamente
-    console.log('🤖 Iniciando asignación automática...');
+    logger.ai(`🤖 Iniciando motor de asignación para ${resultadoImportacion.exitosos} bloques recién importados...`);
     const bloquesIds = resultadoImportacion.bloques.map(b => b._id);
     const asignador = new AsignadorInteligente();
     const resultadoAsignacion = await asignador.asignarAutomaticamente(bloquesIds);
