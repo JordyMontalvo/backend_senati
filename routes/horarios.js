@@ -67,52 +67,77 @@ router.get('/bloque/:bloqueId', async (req, res) => {
   }
 });
 
-// Función auxiliar para validar cruces
-async function validarCruce(diaSemana, horaInicio, horaFin, aulaId, horarioId = null) {
-  if (!aulaId) return null; // Si no hay aula asignada (ej. virtual), no validamos cruce físico
-
-  // Buscar horarios en el mismo día y aula
-  const query = {
+// Función auxiliar para validar cruces de AULA y PROFESOR
+async function validarCruce(diaSemana, horaInicio, horaFin, aulaId, profesorId, horarioId = null) {
+  const queryAula = {
     diaSemana,
     aula: aulaId,
-    $or: [
-      { horaInicio: { $lt: horaFin }, horaFin: { $gt: horaInicio } } // Solapamiento
-    ]
+    $or: [{ horaInicio: { $lt: horaFin }, horaFin: { $gt: horaInicio } }]
   };
 
-  if (horarioId) {
-    query._id = { $ne: horarioId }; // Excluir el propio horario al editar
+  if (horarioId) queryAula._id = { $ne: horarioId };
+
+  // 1. Validar Aula
+  if (aulaId) {
+    const cruceAula = await Horario.findOne(queryAula).populate({
+      path: 'asignacion',
+      populate: { path: 'curso' }
+    });
+    if (cruceAula) return { tipo: 'aula', detalle: cruceAula };
   }
 
-  const cruce = await Horario.findOne(query).populate({
-    path: 'asignacion',
-    populate: { path: 'curso' }
-  });
+  // 2. Validar Profesor
+  if (profesorId) {
+    const Asignacion = require('../models/Asignacion');
+    const asigsProf = await Asignacion.find({ profesor: profesorId }).select('_id');
+    const queryProf = {
+      diaSemana,
+      asignacion: { $in: asigsProf.map(a => a._id) },
+      $or: [{ horaInicio: { $lt: horaFin }, horaFin: { $gt: horaInicio } }]
+    };
+    if (horarioId) queryProf._id = { $ne: horarioId };
 
-  return cruce;
+    const cruceProf = await Horario.findOne(queryProf).populate({
+      path: 'asignacion',
+      populate: [{ path: 'curso' }, { path: 'bloque' }]
+    });
+    if (cruceProf) return { tipo: 'profesor', detalle: cruceProf };
+  }
+
+  return null;
 }
 
 router.post('/', async (req, res) => {
   try {
     const { asignacion: asignacionId, diaSemana, horaInicio, horaFin, aula } = req.body;
     
-    // Determinar Aula ID
-    let aulaId = aula;
-    if (!aulaId) {
-      const Asignacion = require('../models/Asignacion');
-      const docAsignacion = await Asignacion.findById(asignacionId);
-      if (docAsignacion) aulaId = docAsignacion.aula;
-    }
+    // Obtener información de la asignación para el profesor
+    const Asignacion = require('../models/Asignacion');
+    const docAsignacion = await Asignacion.findById(asignacionId).populate('profesor');
+    if (!docAsignacion) return res.status(404).json({ success: false, message: 'Asignación no encontrada' });
+    
+    let aulaId = aula || docAsignacion.aula;
+    const profesorId = docAsignacion.profesor?._id || docAsignacion.profesor;
 
-    // Validar Cruce
-    const cruce = await validarCruce(diaSemana, horaInicio, horaFin, aulaId);
-    if (cruce) {
-      const cursoNombre = cruce.asignacion?.curso?.nombre || 'Otro curso';
-      const horaCruce = `${cruce.horaInicio} - ${cruce.horaFin}`;
-      return res.status(409).json({ 
-        success: false, 
-        message: `Conflicto de horario: El aula ya está ocupada por "${cursoNombre}" de ${horaCruce}.` 
-      });
+    // Validar Cruce (Aula y Profesor)
+    const conflicto = await validarCruce(diaSemana, horaInicio, horaFin, aulaId, profesorId);
+    
+    if (conflicto) {
+      const { tipo, detalle } = conflicto;
+      const cursoNombre = detalle.asignacion?.curso?.nombre || 'Otro curso';
+      const bloqueNombre = detalle.asignacion?.bloque?.codigo || 'Otro bloque';
+      
+      if (tipo === 'aula') {
+        return res.status(409).json({ 
+          success: false, 
+          message: `Conflicto de Aula: El aula ya está siendo usada por "${cursoNombre}" (${bloqueNombre}) en este horario.` 
+        });
+      } else {
+        return res.status(409).json({ 
+          success: false, 
+          message: `Conflicto de Docente: El profesor ya tiene asignado "${cursoNombre}" en el bloque ${bloqueNombre} a esta hora.` 
+        });
+      }
     }
 
     // Crear si no hay cruce
@@ -143,15 +168,30 @@ router.put('/:id', async (req, res) => {
     const nuevoFin = horaFin || horarioActual.horaFin;
     let nuevoAula = aula || horarioActual.aula;
 
+    // Obtener profesor de la asignación
+    const Asignacion = require('../models/Asignacion');
+    const asig = await Asignacion.findById(horarioActual.asignacion);
+    const profesorId = asig?.profesor?._id || asig?.profesor;
+
     // Validar cruce
-    const cruce = await validarCruce(nuevoDia, nuevoInicio, nuevoFin, nuevoAula, req.params.id);
-    if (cruce) {
-      const cursoNombre = cruce.asignacion?.curso?.nombre || 'Otro curso';
-      const horaCruce = `${cruce.horaInicio} - ${cruce.horaFin}`;
-      return res.status(409).json({ 
-        success: false, 
-        message: `Conflicto de horario: El aula ya está ocupada por "${cursoNombre}" de ${horaCruce}.` 
-      });
+    const conflicto = await validarCruce(nuevoDia, nuevoInicio, nuevoFin, nuevoAula, profesorId, req.params.id);
+    
+    if (conflicto) {
+      const { tipo, detalle } = conflicto;
+      const cursoNombre = detalle.asignacion?.curso?.nombre || 'Otro curso';
+      const bloqueNombre = detalle.asignacion?.bloque?.codigo || 'Otro bloque';
+
+      if (tipo === 'aula') {
+        return res.status(409).json({ 
+          success: false, 
+          message: `Conflicto de Aula: El aula para este cambio está ocupada por "${cursoNombre}" del NRC ${bloqueNombre}.` 
+        });
+      } else {
+        return res.status(409).json({ 
+          success: false, 
+          message: `Conflicto de Docente: No se puede mover porque el docente ya dicta "${cursoNombre}" en el NRC ${bloqueNombre} en ese horario.` 
+        });
+      }
     }
 
     const horario = await Horario.findByIdAndUpdate(req.params.id, req.body, { new: true });
