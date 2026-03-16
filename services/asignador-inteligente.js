@@ -106,10 +106,28 @@ class AsignadorInteligente {
    * Obtiene los cursos que corresponden al bloque
    */
   async obtenerCursosParaBloque(bloque) {
+    const semestreNorm = this.normalizarSemestre(bloque.semestreAcademico);
     return await Curso.find({
       carrera: bloque.carrera._id,
-      semestre: bloque.semestreAcademico
+      semestre: semestreNorm
     });
+  }
+
+  /**
+   * Normaliza el formato de semestre (ej: IIII -> IV, 4 -> IV)
+   */
+  normalizarSemestre(sem) {
+    if (!sem) return '';
+    const s = sem.toString().toUpperCase().trim();
+    const map = {
+      '1': 'I', 'I': 'I', 'PRIMERO': 'I', 'PRIMER': 'I',
+      '2': 'II', 'II': 'II', 'SEGUNDO': 'II',
+      '3': 'III', 'III': 'III', 'TERCERO': 'III',
+      '4': 'IV', 'IV': 'IV', 'IIII': 'IV', 'CUARTO': 'IV',
+      '5': 'V', 'V': 'V', 'QUINTO': 'V',
+      '6': 'VI', 'VI': 'VI', 'SEXTO': 'VI'
+    };
+    return map[s] || s;
   }
 
   /**
