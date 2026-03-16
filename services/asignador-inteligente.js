@@ -152,13 +152,21 @@ class AsignadorInteligente {
       // 1. Asegurar asignación
       let asig = await Asignacion.findOne({ bloque: bloque._id, curso: curso._id });
       if (!asig) {
-        const prof = profesores.find(p => p.apellidos === item.profesor) || profesores[0];
-        const aulaDefault = aulas.find(a => a.codigo === item.aula);
+        // Búsqueda borrosa de profesor por apellido
+        let profId;
+        const apellidoIA = item.profesor?.split(' ').pop() || item.profesor;
+        const profMatch = profesores.find(p => 
+          p.apellidos.toLowerCase().includes(apellidoIA.toLowerCase()) ||
+          apellidoIA.toLowerCase().includes(p.apellidos.toLowerCase())
+        );
+
+        profId = profMatch?._id || profesores[0]?._id;
+
         asig = await Asignacion.create({
           bloque: bloque._id,
           curso: curso._id,
-          profesor: prof._id,
-          aula: aulaDefault?._id
+          profesor: profId,
+          aula: aulas.find(a => a.codigo === item.aula)?._id
         });
         this.asignacionesCreadas++;
       }

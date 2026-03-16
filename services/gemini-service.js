@@ -10,7 +10,9 @@ class GeminiService {
     this.apiKey = process.env.GEMINI_API_KEY;
     if (this.apiKey) {
       this.genAI = new GoogleGenerativeAI(this.apiKey);
-      this.model = this.genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      // Intentar usar el modelo flash más reciente, con fallback
+      this.modelName = "gemini-1.5-flash";
+      this.model = this.genAI.getGenerativeModel({ model: this.modelName });
     }
   }
 
@@ -53,12 +55,31 @@ class GeminiService {
 
     try {
       logger.ai(`🧠 Sify IA (Gemini) analizando bloque ${bloque.codigo}...`);
-      const result = await this.model.generateContent(prompt);
+      let result;
+      try {
+        result = await this.model.generateContent(prompt);
+      } catch (e) {
+        if (e.status === 404) {
+          logger.warn("⚠️ Modelo Flash no hallado, intentando con Gemini Pro...");
+          const fallbackModel = this.genAI.getGenerativeModel({ model: "gemini-pro" });
+          result = await fallbackModel.generateContent(prompt);
+        } else {
+          throw e;
+        }
+      }
+
       const response = await result.response;
       let text = response.text();
       
-      // Sanitizar JSON
-      text = text.replace(/```json/g, "").replace(/```/g, "").trim();
+      // Sanitizar JSON (remover markdown, espacios extras, etc)
+      text = text.replace(/```json/g, "").replace(/```/g, "").replace(/`/g, "").trim();
+      
+      // Encontrar el primer [ y el último ]
+      const firstBracket = text.indexOf('[');
+      const lastBracket = text.lastIndexOf(']');
+      if (firstBracket !== -1 && lastBracket !== -1) {
+        text = text.substring(firstBracket, lastBracket + 1);
+      }
       
       const jsonResponse = JSON.parse(text);
       logger.ai(`✅ Sify IA propuso ${jsonResponse.length} sesiones óptimas.`);
