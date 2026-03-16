@@ -22,29 +22,29 @@ class AsignadorInteligente {
     this.asignacionesCreadas = 0;
     this.horariosCreados = 0;
     
-    // Configuración de horarios por turno
+    // Configuración de horarios por turno (Alineados con el GRID del frontend 07:45, etc)
     this.horariosPorTurno = {
       mañana: {
-        dias: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'],
+        dias: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'],
         bloques: [
-          { inicio: '07:00', fin: '09:00' },
-          { inicio: '09:00', fin: '11:00' },
-          { inicio: '11:00', fin: '13:00' }
+          { inicio: '07:45', fin: '10:00' },
+          { inicio: '10:00', fin: '12:30' },
+          { inicio: '12:30', fin: '14:45' }
         ]
       },
       tarde: {
-        dias: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'],
+        dias: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'],
         bloques: [
-          { inicio: '14:00', fin: '16:00' },
-          { inicio: '16:00', fin: '18:00' },
-          { inicio: '18:00', fin: '20:00' }
+          { inicio: '14:45', fin: '17:15' },
+          { inicio: '17:15', fin: '19:30' },
+          { inicio: '19:30', fin: '21:45' }
         ]
       },
       noche: {
         dias: ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'],
         bloques: [
-          { inicio: '19:00', fin: '21:00' },
-          { inicio: '21:00', fin: '23:00' }
+          { inicio: '18:00', fin: '20:15' },
+          { inicio: '20:15', fin: '22:30' }
         ]
       }
     };
@@ -161,36 +161,40 @@ class AsignadorInteligente {
    */
   async asignarCurso(bloque, curso) {
     // 1. Buscar si ya existe asignación
-    const asignacionExistente = await Asignacion.findOne({
+    let asignacion = await Asignacion.findOne({
       bloque: bloque._id,
       curso: curso._id
     });
     
-    if (asignacionExistente) {
-      logger.ai(`   ⏭️  Curso ${curso.nombre} ya asignado`);
-      return;
-    }
-    
-    // 2. Seleccionar profesor inteligentemente
-    const profesor = await this.seleccionarProfesorOptimo(curso);
-    
-    if (profesor) {
-      logger.ai(`Heurística: ${profesor.nombres} ${profesor.apellidos} seleccionado por especialidad/carga baja`);
+    if (asignacion) {
+      const horasAsignadas = await this.calcularHorasAsignadas(asignacion._id);
+      if (horasAsignadas >= (curso.horasTotal || 4)) {
+        logger.ai(`   ⏭️  Curso ${curso.nombre} ya completado (${horasAsignadas}h/${curso.horasTotal}h)`);
+        return;
+      }
+      logger.ai(`   🔄  Curso ${curso.nombre} con asignación parcial (${horasAsignadas}h). Completando...`);
     } else {
-      logger.warn(`Heurística: No se encontró docente idóneo para ${curso.nombre}`);
-      return;
+      // 2. Seleccionar profesor inteligentemente
+      const profesor = await this.seleccionarProfesorOptimo(curso);
+      
+      if (profesor) {
+        logger.ai(`Heurística: ${profesor.nombres} ${profesor.apellidos} seleccionado por especialidad/carga baja`);
+      } else {
+        logger.warn(`Heurística: No se encontró docente idóneo para ${curso.nombre}`);
+        return;
+      }
+      
+      // 3. Crear la asignación
+      asignacion = await Asignacion.create({
+        bloque: bloque._id,
+        curso: curso._id,
+        profesor: profesor._id,
+        observaciones: 'Asignado automáticamente por IA Engine v2.1'
+      });
+      
+      this.asignacionesCreadas++;
+      logger.success(`Asignación vinculada: ${curso.nombre} @ ${profesor.apellidos}`);
     }
-    
-    // 3. Crear la asignación
-    const asignacion = await Asignacion.create({
-      bloque: bloque._id,
-      curso: curso._id,
-      profesor: profesor._id,
-      observaciones: 'Asignado automáticamente por IA Engine v2.1'
-    });
-    
-    this.asignacionesCreadas++;
-    logger.success(`Asignación vinculada: ${curso.nombre} @ ${profesor.apellidos}`);
     
     // 4. Generar horarios inteligentemente
     await this.generarHorariosOptimos(asignacion, bloque, curso);
@@ -235,6 +239,19 @@ class AsignadorInteligente {
   }
 
   /**
+   * Calcula cuántas horas pedagógicas (45min) tiene ya una asignación
+   */
+  async calcularHorasAsignadas(asignacionId) {
+    const horarios = await Horario.find({ asignacion: asignacionId });
+    return horarios.reduce((sum, h) => {
+      const [h1, m1] = h.horaInicio.split(':').map(Number);
+      const [h2, m2] = h.horaFin.split(':').map(Number);
+      const diff = (h2 * 60 + m2) - (h1 * 60 + m1);
+      return sum + Math.ceil(diff / 45);
+    }, 0);
+  }
+
+  /**
    * Genera horarios óptimos sin conflictos
    */
   async generarHorariosOptimos(asignacion, bloque, curso) {
@@ -243,7 +260,10 @@ class AsignadorInteligente {
     const config = this.horariosPorTurno[turno] || this.horariosPorTurno.mañana;
     
     const horasSemanales = curso.horasTotal || curso.horasSemanales || 4;
-    let sesionesDeseadas = Math.ceil(horasSemanales / 2); // Bloques de 2h (90-120 min)
+    let horasAsignadas = await this.calcularHorasAsignadas(asignacion._id);
+    let sesionesDeseadas = Math.ceil((horasSemanales - horasAsignadas) / 3); // Intentar bloques de 3h (135 min)
+    
+    if (sesionesDeseadas <= 0) return;
     
     let creadas = 0;
 
@@ -255,7 +275,6 @@ class AsignadorInteligente {
         if (creadas >= sesionesDeseadas) break;
 
         // 1. Determinar tipo de aula necesaria
-        // Si el curso tiene "taller", "laboratorio" o "práctica" en el nombre, buscar ese tipo
         let tipoAulaRequerida = 'Aula Común';
         const nombreLower = curso.nombre.toLowerCase();
         if (nombreLower.includes('laboratorio') || nombreLower.includes('computo') || nombreLower.includes('software')) {
@@ -264,16 +283,26 @@ class AsignadorInteligente {
           tipoAulaRequerida = 'Taller';
         }
 
-        // 2. Buscar aula disponible del tipo correcto
+        // 2. Buscar aula disponible
         const aula = await this.buscarAulaDisponible(dia, slot.inicio, slot.fin, tipoAulaRequerida);
-        
         if (!aula) continue;
 
         // 3. Verificar profesor libre
         const profOcupado = await this.verificarProfesorOcupado(asignacion.profesor, dia, slot.inicio, slot.fin);
         if (profOcupado) continue;
 
-        // 4. Crear horario
+        // 4. Verificar bloque libre (no superponer cursos del mismo bloque)
+        const asigIds = await Asignacion.find({ bloque: bloque._id }).select('_id');
+        const bloqueOcupado = await Horario.exists({
+            asignacion: { $in: asigIds.map(a => a._id) },
+            diaSemana: dia,
+            $or: [
+              { horaInicio: { $lt: slot.fin }, horaFin: { $gt: slot.inicio } }
+            ]
+        });
+        if (bloqueOcupado) continue;
+
+        // 5. Crear horario
         await Horario.create({
           asignacion: asignacion._id,
           aula: aula._id,
