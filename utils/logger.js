@@ -1,6 +1,3 @@
-const term = require('chalk'); // We'll see if chalk is available, if not we use colors
-// Since I don't know if chalk is available, I'll use standard console with prefixes
-
 const logger = {
   info: (msg, meta = '') => {
     const timestamp = new Date().toISOString();

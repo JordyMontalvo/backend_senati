@@ -4,6 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const connectDB = require('./config/database');
+const logger = require('./utils/logger');
 
 // Crear aplicación Express
 const app = express();
@@ -13,26 +14,8 @@ connectDB();
 
 // Middlewares
 app.use(helmet()); // Seguridad HTTP headers
-const allowedOrigins = [
-  'http://localhost:8080',
-  'http://localhost:5173',
-  'https://fronted-senati.vercel.app'
-];
-
 app.use(cors({
-  origin: function (origin, callback) {
-    // Permitir requests sin origen (como apps móviles o curl)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      // Opcional: Permitir cualquier subdominio de vercel.app para preview
-      if (origin.endsWith('.vercel.app')) {
-        return callback(null, true);
-      }
-      var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
-    }
-    return callback(null, true);
-  },
+  origin: true, // Permitir cualquier origen en esta fase para resolver el bloqueo
   credentials: true
 }));
 app.use(morgan('dev')); // Logger
@@ -101,7 +84,8 @@ app.use((req, res) => {
 
 // Manejo global de errores
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  logger.error('CRASH DETECTADO:', err.message);
+  if (err.stack) console.error(err.stack);
   
   res.status(err.status || 500).json({
     success: false,
@@ -114,7 +98,6 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`\n🚀 Servidor corriendo en puerto ${PORT}`);
-  console.log(`📍 http://localhost:${PORT}`);
-  console.log(`🌍 Entorno: ${process.env.NODE_ENV || 'development'}\n`);
+  logger.success(`Servidor corriendo en puerto ${PORT}`);
+  logger.info(`📍 Modo: ${process.env.NODE_ENV || 'development'}`);
 });
