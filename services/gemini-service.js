@@ -10,8 +10,8 @@ class GeminiService {
     this.apiKey = process.env.GEMINI_API_KEY;
     if (this.apiKey) {
       this.genAI = new GoogleGenerativeAI(this.apiKey);
-      // Intentar usar el modelo flash más reciente, con fallback
-      this.modelName = "gemini-1.5-flash";
+      // Actualizado a modelos 2.0 y Flash-Latest para evitar 404
+      this.modelName = "gemini-2.0-flash"; 
       this.model = this.genAI.getGenerativeModel({ model: this.modelName });
     }
   }
@@ -60,8 +60,8 @@ class GeminiService {
         result = await this.model.generateContent(prompt);
       } catch (e) {
         if (e.status === 404) {
-          logger.warn("⚠️ Modelo Flash no hallado, intentando con Gemini Pro...");
-          const fallbackModel = this.genAI.getGenerativeModel({ model: "gemini-pro" });
+          logger.warn("⚠️ Modelo 2.0 no hallado, intentando con Flash Latest...");
+          const fallbackModel = this.genAI.getGenerativeModel({ model: "gemini-flash-latest" });
           result = await fallbackModel.generateContent(prompt);
         } else {
           throw e;
