@@ -331,6 +331,12 @@ class AsignadorInteligente {
         this.horariosCreados++;
       }
     }
+
+    if (creadas > 0) {
+      logger.ai(`   🕒 Generados ${creadas} bloques de horario para ${curso.nombre} (${creadas * 3}h pedagógicas)`);
+    } else if (sesionesDeseadas > 0) {
+      logger.warn(`   ⚠️ No se pudieron encontrar huecos disponibles para ${curso.nombre} en el turno ${turno}`);
+    }
   }
 
   /**

@@ -1,6 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const Bloque = require('../models/Bloque');
+const geminiService = require('../services/gemini-service');
+const Asignacion = require('../models/Asignacion');
+const Horario = require('../models/Horario');
+const Curso = require('../models/Curso');
+const Profesor = require('../models/Profesor');
+const Aula = require('../models/Aula');
 
 router.get('/', async (req, res) => {
   try {
@@ -118,6 +124,80 @@ router.post('/:id/clonar', async (req, res) => {
   } catch (error) {
     console.error('Error al clonar bloque:', error);
     res.status(500).json({ success: false, message: 'Fallo al clonar la estructura' });
+  }
+});
+
+// PLANIFICACIÓN INTELIGENTE CON GEMINI
+router.post('/:id/planificar-gemini', async (req, res) => {
+  try {
+    const bloqueId = req.params.id;
+    const bloque = await Bloque.findById(bloqueId).populate('periodo').populate('carrera');
+    
+    if (!bloque) return res.status(404).json({ success: false, message: 'Bloque no encontrado' });
+
+    // 1. Recolectar contexto para la IA
+    const cursos = await Curso.find({ carrera: bloque.carrera?._id, semestre: bloque.semestreAcademico });
+    const asignaciones = await Asignacion.find({ bloque: bloqueId }).populate('profesor').populate('aula');
+    const aulas = await Aula.find({ activo: true });
+    
+    // Horarios externos (para evitar cruces)
+    const horariosExistentes = await Horario.find().populate({
+      path: 'asignacion',
+      populate: { path: 'bloque' }
+    });
+
+    const contexto = {
+      bloque,
+      cursos,
+      profesores: asignaciones.map(a => a.profesor).filter(p => p),
+      aulas,
+      horariosExistentes: horariosExistentes.map(h => ({
+        dia: h.diaSemana,
+        inicio: h.horaInicio,
+        aula: h.aula?.codigo,
+        profesor: h.asignacion?.profesor?.apellidos
+      }))
+    };
+
+    // 2. Llamar a Gemini
+    const plan = await geminiService.planificarBloque(contexto);
+
+    // 3. Procesar y Guardar el plan (Básico: Crear horarios si no hay conflictos)
+    let creados = 0;
+    for (const item of plan) {
+      const asig = asignaciones.find(a => a.curso?.nombre === item.curso || a.curso?.codigo === item.curso);
+      if (asig) {
+        // Validación minimalista antes de guardar
+        const existe = await Horario.exists({ 
+          asignacion: asig._id, 
+          diaSemana: item.dia, 
+          horaInicio: item.inicio 
+        });
+
+        if (!existe) {
+          const aulaObj = aulas.find(a => a.codigo === item.aula) || asig.aula;
+          await Horario.create({
+            asignacion: asig._id,
+            diaSemana: item.dia,
+            horaInicio: item.inicio,
+            horaFin: item.fin,
+            tipoSesion: item.tipo || 'Teoría',
+            aula: aulaObj?._id
+          });
+          creados++;
+        }
+      }
+    }
+
+    res.json({ 
+      success: true, 
+      message: `Gemini ha generado ${creados} sesiones óptimas para este bloque.`,
+      plan
+    });
+
+  } catch (error) {
+    console.error('Error en Planificador Gemini:', error);
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
