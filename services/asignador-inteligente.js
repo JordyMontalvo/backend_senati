@@ -6,6 +6,7 @@ const Aula = require('../models/Aula');
 const Asignacion = require('../models/Asignacion');
 const Horario = require('../models/Horario');
 const logger = require('../utils/logger');
+const geminiService = require('./gemini-service');
 
 /**
  * Sistema de Asignación Automática Inteligente con IA
@@ -54,8 +55,12 @@ class AsignadorInteligente {
    * Asigna automáticamente todo para una lista de bloques
    */
   async asignarAutomaticamente(bloquesIds) {
-    logger.ai(`Iniciando asignación automática para ${bloquesIds.length} bloques`);
+    logger.ai(`🤖 Iniciando Sify-Engine para ${bloquesIds.length} bloques`);
     
+    // Verificar si usamos IA Real (Gemini) o Heurística estándar
+    const useSmartIA = !!process.env.GEMINI_API_KEY;
+    if (useSmartIA) logger.ai("✨ Modo 'Smart Planner' activado via Gemini 1.5");
+
     const bloques = await Bloque.find({ _id: { $in: bloquesIds } })
       .populate('carrera periodo');
     
@@ -92,12 +97,85 @@ class AsignadorInteligente {
     
     logger.info(`   📚 Cursos identificados: ${cursos.length} para el semestre actual`);
     
-    // 2. Para cada curso, asignar profesor y crear horarios
+    // 2. Si usamos Gemini, intentamos una planificación integral
+    const useSmartIA = !!process.env.GEMINI_API_KEY;
+    if (useSmartIA) {
+      try {
+        await this.planificarConIA(bloque, cursos);
+        return; // Terminamos si la IA lo resolvió
+      } catch (e) {
+        logger.warn(`⚠️ Sify IA falló para ${bloque.codigo}, usando heurística de respaldo.`);
+      }
+    }
+
+    // 2. Respaldo: Para cada curso, asignar profesor y crear horarios
     for (const curso of cursos) {
       try {
         await this.asignarCurso(bloque, curso);
       } catch (error) {
         logger.error(`Falló asignación del curso ${curso.nombre} en bloque ${bloque.codigo}`, error.message);
+      }
+    }
+  }
+
+  /**
+   * Delegación total a Gemini para la planificación del bloque
+   */
+  async planificarConIA(bloque, cursos) {
+    const profesores = await Profesor.find({ activo: true });
+    const aulas = await Aula.find({ activo: true });
+    const horariosExistentes = await Horario.find().populate({
+      path: 'asignacion',
+      populate: { path: 'bloque' }
+    });
+
+    const context = {
+      bloque,
+      cursos,
+      profesores,
+      aulas,
+      horariosExistentes: horariosExistentes.map(h => ({
+        dia: h.diaSemana,
+        inicio: h.horaInicio,
+        aula: h.aula?.codigo,
+        profesor: h.asignacion?.profesor?.apellidos
+      }))
+    };
+
+    const plan = await geminiService.planificarBloque(context);
+
+    // Guardar resultados del plan
+    for (const item of plan) {
+      const curso = cursos.find(c => c.nombre === item.curso || c.codigo === item.curso);
+      if (!curso) continue;
+
+      // 1. Asegurar asignación
+      let asig = await Asignacion.findOne({ bloque: bloque._id, curso: curso._id });
+      if (!asig) {
+        const prof = profesores.find(p => p.apellidos === item.profesor) || profesores[0];
+        const aulaDefault = aulas.find(a => a.codigo === item.aula);
+        asig = await Asignacion.create({
+          bloque: bloque._id,
+          curso: curso._id,
+          profesor: prof._id,
+          aula: aulaDefault?._id
+        });
+        this.asignacionesCreadas++;
+      }
+
+      // 2. Crear horarios
+      const existe = await Horario.exists({ asignacion: asig._id, diaSemana: item.dia, horaInicio: item.inicio });
+      if (!existe) {
+        const aulaRef = aulas.find(a => a.codigo === item.aula) || asig.aula;
+        await Horario.create({
+          asignacion: asig._id,
+          diaSemana: item.dia,
+          horaInicio: item.inicio,
+          horaFin: item.fin,
+          tipoSesion: item.tipo || 'Teoría',
+          aula: aulaRef?._id
+        });
+        this.horariosCreados++;
       }
     }
   }

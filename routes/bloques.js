@@ -162,12 +162,32 @@ router.post('/:id/planificar-gemini', async (req, res) => {
     // 2. Llamar a Gemini
     const plan = await geminiService.planificarBloque(contexto);
 
-    // 3. Procesar y Guardar el plan (Básico: Crear horarios si no hay conflictos)
+    // 3. Procesar y Guardar el plan
     let creados = 0;
     for (const item of plan) {
-      const asig = asignaciones.find(a => a.curso?.nombre === item.curso || a.curso?.codigo === item.curso);
-      if (asig) {
-        // Validación minimalista antes de guardar
+      // Búsqueda inteligente del curso (nombre exacto o contiene)
+      const curso = cursos.find(c => 
+        c.nombre.toLowerCase() === item.curso.toLowerCase() || 
+        c.nombre.toLowerCase().includes(item.curso.toLowerCase())
+      );
+      
+      if (curso) {
+        // Encontrar o crear asignación
+        let asig = asignaciones.find(a => a.curso?._id.toString() === curso._id.toString());
+        if (!asig) {
+          // Si la IA propuso un profesor, buscarlo por apellido
+          const profId = profesores.find(p => 
+            p.apellidos.toLowerCase().includes(item.profesor.toLowerCase())
+          )?._id || profesores[0]?._id;
+
+          asig = await Asignacion.create({
+            bloque: bloqueId,
+            curso: curso._id,
+            profesor: profId,
+            aula: aulas.find(a => a.codigo === item.aula)?._id || aulas[0]?._id
+          });
+        }
+
         const existe = await Horario.exists({ 
           asignacion: asig._id, 
           diaSemana: item.dia, 

@@ -16,43 +16,55 @@ class GeminiService {
 
   async planificarBloque(contexto) {
     if (!this.apiKey) {
-      throw new Error("GEMINI_API_KEY no configurada en el entorno.");
+      throw new Error("GEMINI_API_KEY no configurada.");
     }
 
     const { bloque, cursos, profesores, aulas, horariosExistentes } = contexto;
 
     const prompt = `
-      Eres un experto en programación académica para SENATI. Necesito que planifiques el horario para el bloque ${bloque.codigo} (${bloque.turno}).
+      Eres el motor de IA 'Sify' para SENATI. Necesito planificar el bloque ${bloque.codigo} (Turno: ${bloque.turno}).
       
-      CURSOS A PROGRAMAR (con sus horas totales):
-      ${cursos.map(c => `- ${c.nombre} (${c.horasTotal}h total)`).join('\n')}
+      CURSOS A PROGRAMAR:
+      ${cursos.map(c => `- ${c.nombre} (Semanales: ${c.horasSemanales || 4}h)`).join('\n')}
       
-      RESTRICCIONES:
-      1. Turno: ${bloque.turno}. Solo usa horas dentro de este rango.
-      2. No debe haber cruces de aulas ni de profesores.
-      3. Horarios ya ocupados en la institución: ${JSON.stringify(horariosExistentes.slice(0, 50))}
-      4. Profesores especialistas asignados: ${profesores.map(p => p.apellidos).join(', ')}
+      RECURSOS DISPONIBLES:
+      - Docentes Expertos: ${profesores.map(p => `${p.apellidos} (${p.especialidad})`).join(', ')}
+      - Aulas/Laboratorios: ${aulas.map(a => `${a.codigo} (${a.tipo})`).join(', ')}
       
-      FORMATO DE SALIDA (JSON ÚNICAMENTE):
+      RESTRICCIONES SENATI:
+      1. Horarios permitidos: Lunes a Sábado.
+      2. No cruces de docente ni aula. Considera horarios ocupados: ${JSON.stringify(horariosExistentes.slice(0, 30))}
+      3. Importante: "Formación en Empresa" no se programa en el aula.
+      4. Los bloques de clase son usualmente de 2h 15m (3h pedagógicas).
+      
+      FORMATO DE SALIDA (ESTRICTAMENTE JSON):
       [
-        { "curso": "Nombre", "dia": "Lunes", "inicio": "07:45", "fin": "10:00", "tipo": "Teoría", "aula": "CodigoAula" }
+        { 
+          "curso": "Nombre Exacto", 
+          "profesor": "Apellidos Docente", 
+          "dia": "Lunes", 
+          "inicio": "07:45", 
+          "fin": "10:00", 
+          "aula": "CodigoAula",
+          "tipo": "Teoría/Laboratorio/Taller"
+        }
       ]
-      
-      Genera una distribución equilibrada y eficiente.
     `;
 
     try {
-      logger.ai(`🤖 Consultando a Gemini para el bloque ${bloque.codigo}...`);
+      logger.ai(`🧠 Sify IA (Gemini) analizando bloque ${bloque.codigo}...`);
       const result = await this.model.generateContent(prompt);
       const response = await result.response;
       let text = response.text();
       
-      // Limpiar markdown si Gemini lo incluye
+      // Sanitizar JSON
       text = text.replace(/```json/g, "").replace(/```/g, "").trim();
       
-      return JSON.parse(text);
+      const jsonResponse = JSON.parse(text);
+      logger.ai(`✅ Sify IA propuso ${jsonResponse.length} sesiones óptimas.`);
+      return jsonResponse;
     } catch (error) {
-      logger.error("Error en GeminiService:", error);
+      logger.error("Error en Sify Gemini Service:", error);
       throw error;
     }
   }
