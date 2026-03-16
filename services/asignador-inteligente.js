@@ -114,20 +114,46 @@ class AsignadorInteligente {
   }
 
   /**
-   * Normaliza el formato de semestre (ej: IIII -> IV, 4 -> IV)
+   * Normaliza el formato de semestre (ej: IIII -> IV, 4 -> IV, "SEM 1" -> I)
    */
   normalizarSemestre(sem) {
-    if (!sem) return '';
-    const s = sem.toString().toUpperCase().trim();
+    if (!sem) return 'I';
+    
+    // Limpieza profunda: Quitar palabras comunes y espacios
+    let s = sem.toString().toUpperCase()
+      .replace(/SEMESTRE|CICLO|SEM|NIVEL|/g, '')
+      .trim();
+
     const map = {
-      '1': 'I', 'I': 'I', 'PRIMERO': 'I', 'PRIMER': 'I',
-      '2': 'II', 'II': 'II', 'SEGUNDO': 'II',
-      '3': 'III', 'III': 'III', 'TERCERO': 'III',
-      '4': 'IV', 'IV': 'IV', 'IIII': 'IV', 'CUARTO': 'IV',
-      '5': 'V', 'V': 'V', 'QUINTO': 'V',
-      '6': 'VI', 'VI': 'VI', 'SEXTO': 'VI'
+      '1': 'I', '01': 'I', 'I': 'I', 'PRIMERO': 'I', 'PRIMER': 'I', 'I-I': 'I',
+      '2': 'II', '02': 'II', 'II': 'II', 'SEGUNDO': 'II', 'II-II': 'II',
+      '3': 'III', '03': 'III', 'III': 'III', 'TERCERO': 'III', 'III-III': 'III',
+      '4': 'IV', '04': 'IV', 'IV': 'IV', 'IIII': 'IV', 'CUARTO': 'IV', 'IV-IV': 'IV',
+      '5': 'V', '05': 'V', 'V': 'V', 'QUINTO': 'V', 'V-V': 'V',
+      '6': 'VI', '06': 'VI', 'VI': 'VI', 'SEXTO': 'VI', 'VI-VI': 'VI'
     };
+    
+    // Si no está en el mapa, intentamos extraer los caracteres de números romanos o dígitos
+    if (!map[s]) {
+      const match = s.match(/(IV|VI|[IVXLCDM]+|\d+)/);
+      if (match) s = match[0];
+    }
+
     return map[s] || s;
+  }
+
+  /**
+   * Normaliza el turno/subPeriodo para consistencia en la UI y lógica
+   */
+  normalizarTurno(turno) {
+    if (!turno) return 'mañana';
+    const t = turno.toString().toLowerCase().trim();
+    
+    if (t.includes('mañ') || t.includes('am') || t.includes('morn')) return 'mañana';
+    if (t.includes('tar') || t.includes('pm') || t.includes('after')) return 'tarde';
+    if (t.includes('noc') || t.includes('night') || t.includes('eve')) return 'noche';
+    
+    return t;
   }
 
   /**
@@ -212,7 +238,8 @@ class AsignadorInteligente {
    * Genera horarios óptimos sin conflictos
    */
   async generarHorariosOptimos(asignacion, bloque, curso) {
-    const turno = (bloque.subPeriodo || 'mañana').toLowerCase();
+    const turnoRaw = bloque.subPeriodo || 'mañana';
+    const turno = this.normalizarTurno(turnoRaw);
     const config = this.horariosPorTurno[turno] || this.horariosPorTurno.mañana;
     
     const horasSemanales = curso.horasTotal || curso.horasSemanales || 4;
