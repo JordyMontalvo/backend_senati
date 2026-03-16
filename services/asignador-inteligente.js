@@ -160,6 +160,13 @@ class AsignadorInteligente {
    * Asigna un curso a un bloque con profesor y horarios
    */
   async asignarCurso(bloque, curso) {
+    // 0. Omitir si es Formación en Empresa (no requiere horario físico en SENATI)
+    const nombreLower = curso.nombre.toLowerCase();
+    if (nombreLower.includes('empresa') && nombreLower.includes('práctica')) {
+      logger.ai(`   🌴 Curso ${curso.nombre} es en empresa. Omitiendo generación de horarios.`);
+      return;
+    }
+
     // 1. Buscar si ya existe asignación
     let asignacion = await Asignacion.findOne({
       bloque: bloque._id,
@@ -261,9 +268,17 @@ class AsignadorInteligente {
     
     const horasSemanales = curso.horasTotal || curso.horasSemanales || 4;
     let horasAsignadas = await this.calcularHorasAsignadas(asignacion._id);
-    let sesionesDeseadas = Math.ceil((horasSemanales - horasAsignadas) / 3); // Intentar bloques de 3h (135 min)
     
-    if (sesionesDeseadas <= 0) return;
+    // Calcular cuántas horas pedagógicas (bloques de 45m) faltan realmente
+    let horasFaltantes = horasSemanales - horasAsignadas;
+    
+    if (horasFaltantes <= 0) {
+      logger.ai(`   ✅ Curso ${curso.nombre} ya tiene todas sus horas (${horasAsignadas}/${horasSemanales})`);
+      return;
+    }
+    
+    // Intentar bloques de 3h (135 min) que equivalen a 3 horas pedagógicas
+    let sesionesDeseadas = Math.ceil(horasFaltantes / 3); 
     
     let creadas = 0;
 
