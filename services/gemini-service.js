@@ -16,7 +16,7 @@ class GeminiService {
     }
   }
 
-  async planificarBloque(contexto) {
+  async planificarBloque(contexto, retries = 3) {
     if (!this.apiKey) {
       throw new Error("GEMINI_API_KEY no configurada.");
     }
@@ -53,40 +53,48 @@ class GeminiService {
       ]
     `;
 
-    try {
-      logger.ai(`🧠 Sify IA (Gemini) analizando bloque ${bloque.codigo}...`);
-      let result;
+    for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        result = await this.model.generateContent(prompt);
-      } catch (e) {
-        if (e.status === 404) {
-          logger.warn("⚠️ Modelo 2.0 no hallado, intentando con Flash Latest...");
-          const fallbackModel = this.genAI.getGenerativeModel({ model: "gemini-flash-latest" });
-          result = await fallbackModel.generateContent(prompt);
-        } else {
-          throw e;
+        logger.ai(`🧠 Sify IA (Gemini) analizando bloque ${bloque.codigo} (Intento ${attempt}/${retries})...`);
+        let result;
+        try {
+          result = await this.model.generateContent(prompt);
+        } catch (e) {
+          if (e.status === 404) {
+             const fallbackModel = this.genAI.getGenerativeModel({ model: "gemini-flash-latest" });
+             result = await fallbackModel.generateContent(prompt);
+          } else {
+            throw e;
+          }
         }
-      }
 
-      const response = await result.response;
-      let text = response.text();
-      
-      // Sanitizar JSON (remover markdown, espacios extras, etc)
-      text = text.replace(/```json/g, "").replace(/```/g, "").replace(/`/g, "").trim();
-      
-      // Encontrar el primer [ y el último ]
-      const firstBracket = text.indexOf('[');
-      const lastBracket = text.lastIndexOf(']');
-      if (firstBracket !== -1 && lastBracket !== -1) {
-        text = text.substring(firstBracket, lastBracket + 1);
+        const response = await result.response;
+        let text = response.text();
+        
+        text = text.replace(/```json/g, "").replace(/```/g, "").replace(/`/g, "").trim();
+        const firstBracket = text.indexOf('[');
+        const lastBracket = text.lastIndexOf(']');
+        if (firstBracket !== -1 && lastBracket !== -1) {
+          text = text.substring(firstBracket, lastBracket + 1);
+        }
+        
+        const jsonResponse = JSON.parse(text);
+        logger.ai(`✅ Sify IA propuso ${jsonResponse.length} sesiones.`);
+        return jsonResponse;
+
+      } catch (error) {
+        const isQuotaExceeded = error.status === 429 || error.message?.includes("quota") || error.message?.includes("429");
+        
+        if (isQuotaExceeded && attempt < retries) {
+          const waitTime = attempt * 2000; // 2s, 4s...
+          logger.warn(`⚠️ Cuota excedida. Reintentando en ${waitTime/1000}s...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+          continue;
+        }
+
+        logger.error(`Error en Sify Gemini Service (Intento ${attempt}):`, error.message);
+        throw error;
       }
-      
-      const jsonResponse = JSON.parse(text);
-      logger.ai(`✅ Sify IA propuso ${jsonResponse.length} sesiones óptimas.`);
-      return jsonResponse;
-    } catch (error) {
-      logger.error("Error en Sify Gemini Service:", error);
-      throw error;
     }
   }
 }

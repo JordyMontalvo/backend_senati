@@ -59,7 +59,7 @@ class AsignadorInteligente {
     
     // Verificar si usamos IA Real (Gemini) o Heurística estándar
     const useSmartIA = !!process.env.GEMINI_API_KEY;
-    if (useSmartIA) logger.ai("✨ Modo 'Smart Planner' activado via Gemini 1.5");
+    if (useSmartIA) logger.ai("✨ Modo 'Smart Planner' activado via Sify (Gemini 2.0)");
 
     const bloques = await Bloque.find({ _id: { $in: bloquesIds } })
       .populate('carrera periodo');
