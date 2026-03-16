@@ -64,7 +64,20 @@ class AsignadorInteligente {
     const bloques = await Bloque.find({ _id: { $in: bloquesIds } })
       .populate('carrera periodo');
     
-    logger.info(`📦 Cargados ${bloques.length} bloques desde la BD`);
+    // Verificación de integridad: Confirmar que los bloques existen realmente en DB
+    if (bloques.length !== bloquesIds.length) {
+      logger.warn(`⚠️ Verificación DB: Se solicitaron ${bloquesIds.length} bloques, pero solo existen ${bloques.length} en la base de datos. Ajustando proceso...`);
+    }
+
+    logger.info(`📦 Cargados ${bloques.length} bloques verificados desde la BD`);
+
+    // Limpieza de seguridad: Antes de asignar, eliminamos horarios previos de ESTOS bloques
+    // para que la IA no choque consigo misma y tengamos una base limpia
+    for (const b of bloques) {
+      const asignacionesIds = await Asignacion.find({ bloque: b._id }).select('_id');
+      await Horario.deleteMany({ asignacion: { $in: asignacionesIds.map(a => a._id) } });
+      logger.debug(`🧹 Limpieza completada para el bloque ${b.codigo}`);
+    }
     
     for (const bloque of bloques) {
       try {
@@ -134,12 +147,16 @@ class AsignadorInteligente {
       cursos,
       profesores,
       aulas,
-      horariosExistentes: horariosExistentes.map(h => ({
-        dia: h.diaSemana,
-        inicio: h.horaInicio,
-        aula: h.aula?.codigo,
-        profesor: h.asignacion?.profesor?.apellidos
-      }))
+      // Filtramos para que la IA NO vea como conflicto el propio bloque que está planificando
+      horariosExistentes: horariosExistentes
+        .filter(h => h.asignacion?.bloque?._id.toString() !== bloque._id.toString())
+        .map(h => ({
+          dia: h.diaSemana,
+          inicio: h.horaInicio,
+          aula: h.aula?.codigo,
+          profesor: h.asignacion?.profesor?.apellidos,
+          bloque: h.asignacion?.bloque?.codigo
+        }))
     };
 
     const plan = await geminiService.planificarBloque(context);
