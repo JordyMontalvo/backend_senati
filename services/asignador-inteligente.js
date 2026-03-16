@@ -129,8 +129,8 @@ class AsignadorInteligente {
       '2': 'II', '02': 'II', 'II': 'II', 'SEGUNDO': 'II', 'II-II': 'II',
       '3': 'III', '03': 'III', 'III': 'III', 'TERCERO': 'III', 'III-III': 'III',
       '4': 'IV', '04': 'IV', 'IV': 'IV', 'IIII': 'IV', 'CUARTO': 'IV', 'IV-IV': 'IV',
-      '5': 'V', '05': 'V', 'V': 'V', 'QUINTO': 'V', 'V-V': 'V',
-      '6': 'VI', '06': 'VI', 'VI': 'VI', 'SEXTO': 'VI', 'VI-VI': 'VI'
+      '5': 'V', '05': 'V', 'V': 'V', 'IIIII': 'V', 'QUINTO': 'V', 'V-V': 'V',
+      '6': 'VI', '06': 'VI', 'VI': 'VI', 'IIIIII': 'VI', 'SEXTO': 'VI', 'VI-VI': 'VI'
     };
     
     // Si no está en el mapa, intentamos extraer los caracteres de números romanos o dígitos
