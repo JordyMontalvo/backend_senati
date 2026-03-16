@@ -18,6 +18,12 @@ const logger = {
   ai: (msg, meta = '') => {
     const timestamp = new Date().toISOString();
     console.log(`[${timestamp}] 🤖 AI-ENGINE: ${msg}`, meta);
+  },
+  debug: (msg, meta = '') => {
+    if (process.env.NODE_ENV === 'development') {
+      const timestamp = new Date().toISOString();
+      console.log(`[${timestamp}] 🔍 DEBUG: ${msg}`, meta);
+    }
   }
 };
 

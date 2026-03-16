@@ -76,7 +76,7 @@ class AsignadorInteligente {
     for (const b of bloques) {
       const asignacionesIds = await Asignacion.find({ bloque: b._id }).select('_id');
       await Horario.deleteMany({ asignacion: { $in: asignacionesIds.map(a => a._id) } });
-      logger.debug(`🧹 Limpieza completada para el bloque ${b.codigo}`);
+      logger.info(`🧹 Limpieza completada para el bloque ${b.codigo}`);
     }
     
     for (const bloque of bloques) {
