@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h1>📅 Períodos Académicos</h1>
-        <p>Gestiona los ciclos académicos</p>
+        <p>Gestiona los periodos académicos</p>
       </div>
       <button class="btn btn-primary" @click="abrirModalNuevo">
         <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
