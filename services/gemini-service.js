@@ -47,15 +47,16 @@ class GeminiService {
       - DOCENTES (Pool para sugerir si no hay asignación): ${profesores.map(p => `${p.apellidos} (${p.especialidad})`).join(', ')}
       - AMBIENTES: ${aulas.map(a => `${a.codigo} (${a.tipo})`).join(', ')}
       
-      REGLAS DE ORO SENATI:
-      1. PRIORIDAD: Si un curso ya tiene un "DOCENTE ASIGNADO", USA ESE DOCENTE. Si no, sugiere uno del pool con especialidad acorde.
-      2. TIPO DE SESIÓN: 
-         - Si son Horas Teoría -> Tipo: 'Teoría', Aula: 'Aula Común'.
-         - Si son Horas Taller -> Tipo: 'Taller', Aula: 'Laboratorio' o 'Taller'.
+      REGLAS DE ORO SENATI (ESCUELA ETI):
+      1. FLEXIBILIDAD DOCENTE: Todos los profesores del pool están calificados para dictar CUALQUIER materia de CUALQUIER carrera de ETI (Software, Redes, Ciberseguridad, etc.). No hay restricción de especialidad.
+      2. PRIORIDAD DE ASIGNACIÓN: Si un curso ya tiene un "DOCENTE ASIGNADO", es obligatorio usar ese docente. Si no tiene (SIN DOCENTE ASIGNADO), puedes sugerir libremente a cualquiera del pool.
+      3. TIPO DE SESIÓN: 
+         - Si son Horas Teoría -> Tipo: 'Teoría', Aula: 'Aula Común' o Pabellón K.
+         - Si son Horas Taller -> Tipo: 'Taller', Aula: 'Laboratorio' o Pabellón 60TA/G.
          - Si son Horas Virtuales -> Tipo: 'Virtual', Aula: 'Entorno Virtual'.
-      3. BLOQUES DE TIEMPO: Las sesiones son de 2h 15m (3h pedagógicas). Ejemplo: 07:45 a 10:00 o 10:00 a 12:15.
-      4. DISPONIBILIDAD: No cruces docente ni aula. Horarios ocupados externos: ${JSON.stringify(horariosOcupadosGlobal.slice(0, 40))}
-      5. COMPLETITUD: Intenta cubrir el 100% de las horas (Teoría + Taller + Virtual) distribuidas en la semana (Lunes a Sábado).
+      4. BLOQUES DE TIEMPO: Las sesiones típicas duran 2h 15m (3h pedagógicas) o 3h 00m (4h pedagógicas). Distribúyelas equitativamente.
+      5. DISPONIBILIDAD: No cruces docente ni aula. Horarios externos ocupados: ${JSON.stringify(horariosOcupadosGlobal.slice(0, 40))}
+      6. COMPLETITUD: Intenta cubrir el 100% de las horas (Teoría + Taller + Virtual) del curso en la semana.
 
       FORMATO DE SALIDA (ESTRICTAMENTE JSON):
       [
