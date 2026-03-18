@@ -48,15 +48,17 @@ class GeminiService {
       - AMBIENTES: ${aulas.map(a => `${a.codigo} (${a.tipo})`).join(', ')}
       
       REGLAS DE ORO SENATI (ESCUELA ETI):
-      1. FLEXIBILIDAD DOCENTE: Todos los profesores del pool están calificados para dictar CUALQUIER materia de CUALQUIER carrera de ETI (Software, Redes, Ciberseguridad, etc.). No hay restricción de especialidad.
-      2. PRIORIDAD DE ASIGNACIÓN: Si un curso ya tiene un "DOCENTE ASIGNADO", es obligatorio usar ese docente. Si no tiene (SIN DOCENTE ASIGNADO), puedes sugerir libremente a cualquiera del pool.
-      3. TIPO DE SESIÓN: 
-         - Si son Horas Teoría -> Tipo: 'Teoría', Aula: 'Aula Común' o Pabellón K.
-         - Si son Horas Taller -> Tipo: 'Taller', Aula: 'Laboratorio' o Pabellón 60TA/G.
-         - Si son Horas Virtuales -> Tipo: 'Virtual', Aula: 'Entorno Virtual'.
-      4. BLOQUES DE TIEMPO: Las sesiones típicas duran 2h 15m (3h pedagógicas) o 3h 00m (4h pedagógicas). Distribúyelas equitativamente.
-      5. DISPONIBILIDAD: No cruces docente ni aula. Horarios externos ocupados: ${JSON.stringify(horariosOcupadosGlobal.slice(0, 40))}
-      6. COMPLETITUD: Intenta cubrir el 100% de las horas (Teoría + Taller + Virtual) del curso en la semana.
+      1. FLEXIBILIDAD DOCENTE: Todos los profesores del pool están calificados para dictar CUALQUIER materia de CUALQUIER carrera de ETI. No hay restricción de especialidad rígida.
+      2. DURACIÓN ACADÉMICA (CRÍTICO): 
+         - Cursos con nombre 'SEMINARIO' (ej. Seminario de Oratoria): SIEMPRE duran las 16 SEMANAS completas del periodo. No reducirlos.
+         - OTROS cursos: Deben ser MODULARES, típicamente de 4 a 8 semanas, según la carga de horas (Teoría + Taller). No los extiendas a 16 semanas si no es necesario.
+      3. PRIORIDAD DE ASIGNACIÓN: Si un curso tiene "DOCENTE ASIGNADO", úsalo. Si no, sugiere uno libre del pool.
+      4. TIPO DE SESIÓN: 
+         - Teoría -> Pabellón K / Aula.
+         - Taller -> Pabellón 60TA o G / Laboratorio.
+         - Virtual -> Entorno Virtual.
+      5. BLOQUES DE TIEMPO: Sesiones de 2h 15m o 3h 00m. Distribúyelas equitativamente. Evita huecos muertos.
+      6. COMPLETITUD: Cubre el 100% de las horas del curso en la semana para su periodo correspondiente.
 
       FORMATO DE SALIDA (ESTRICTAMENTE JSON):
       [
