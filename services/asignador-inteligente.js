@@ -137,6 +137,7 @@ class AsignadorInteligente {
   async planificarConIA(bloque, cursos) {
     const profesores = await Profesor.find({ activo: true });
     const aulas = await Aula.find({ activo: true });
+    const asignacionesActuales = await Asignacion.find({ bloque: bloque._id }).populate('profesor');
     const horariosExistentes = await Horario.find().populate({
       path: 'asignacion',
       populate: { path: 'bloque' }
@@ -144,15 +145,38 @@ class AsignadorInteligente {
 
     const context = {
       bloque,
-      cursos,
-      profesores,
-      aulas,
-      // Filtramos para que la IA NO vea como conflicto el propio bloque que está planificando
-      horariosExistentes: horariosExistentes
+      cursos: cursos.map(c => ({
+        _id: c._id,
+        nombre: c.nombre,
+        codigo: c.codigo,
+        horasTeoria: c.horasTeoria || 0,
+        horasTaller: c.horasTaller || 0,
+        horasVirtual: c.horasVirtual || 0,
+        horasTotal: (c.horasTeoria || 0) + (c.horasTaller || 0) + (c.horasVirtual || 0) || c.horasTotal || 4
+      })),
+      profesores: profesores.map(p => ({
+        _id: p._id,
+        apellidos: p.apellidos,
+        nombres: p.nombres,
+        especialidad: p.especialidad
+      })),
+      asignacionesActuales: asignacionesActuales.map(a => ({
+        cursoId: a.curso?._id || a.curso,
+        profesorId: a.profesor?._id,
+        profesorNombre: a.profesor ? `${a.profesor.apellidos}, ${a.profesor.nombres}` : null,
+        aulaId: a.aula?._id
+      })),
+      aulas: aulas.map(a => ({
+        codigo: a.codigo,
+        tipo: a.tipo,
+        capacidad: a.capacidad
+      })),
+      horariosOcupadosGlobal: horariosExistentes
         .filter(h => h.asignacion?.bloque?._id.toString() !== bloque._id.toString())
         .map(h => ({
           dia: h.diaSemana,
           inicio: h.horaInicio,
+          fin: h.horaFin,
           aula: h.aula?.codigo,
           profesor: h.asignacion?.profesor?.apellidos,
           bloque: h.asignacion?.bloque?.codigo
@@ -197,7 +221,7 @@ class AsignadorInteligente {
           diaSemana: item.dia,
           horaInicio: item.inicio,
           horaFin: item.fin,
-          tipoSesion: item.tipo || 'Teoría',
+          tipoSesion: item.tipo?.replace('|', '') || 'Teoría',
           aula: aulaRef?._id
         });
         this.horariosCreados++;

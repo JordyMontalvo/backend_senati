@@ -29,6 +29,14 @@ const horarioSchema = new mongoose.Schema({
     type: String,
     enum: ['Teoría', 'Taller', 'Laboratorio', 'Virtual', 'Evaluación'],
     default: 'Teoría'
+  },
+  fechaInicio: {
+    type: Date,
+    comment: 'Fecha de inicio específica para esta sesión (modular)'
+  },
+  fechaFin: {
+    type: Date,
+    comment: 'Fecha de fin específica para esta sesión (modular)'
   }
 }, {
   timestamps: true

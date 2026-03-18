@@ -140,6 +140,9 @@ router.post('/:id/planificar-gemini', async (req, res) => {
     const asignaciones = await Asignacion.find({ bloque: bloqueId }).populate('profesor').populate('aula');
     const aulas = await Aula.find({ activo: true });
     
+    // Traer todos los profesores para que la IA pueda sugerir asignaciones si faltan
+    const allProfesores = await Profesor.find({ activo: true });
+
     // Horarios externos (para evitar cruces)
     const horariosExistentes = await Horario.find().populate({
       path: 'asignacion',
@@ -148,14 +151,39 @@ router.post('/:id/planificar-gemini', async (req, res) => {
 
     const contexto = {
       bloque,
-      cursos,
-      profesores: asignaciones.map(a => a.profesor).filter(p => p),
-      aulas,
-      horariosExistentes: horariosExistentes.map(h => ({
+      cursos: cursos.map(c => ({
+        _id: c._id,
+        nombre: c.nombre,
+        codigo: c.codigo,
+        horasTeoria: c.horasTeoria || 0,
+        horasTaller: c.horasTaller || 0,
+        horasVirtual: c.horasVirtual || 0,
+        horasTotal: c.horasTotal || 0
+      })),
+      profesores: allProfesores.map(p => ({
+        _id: p._id,
+        apellidos: p.apellidos,
+        nombres: p.nombres,
+        especialidad: p.especialidad
+      })),
+      asignacionesActuales: asignaciones.map(a => ({
+        cursoId: a.curso?._id,
+        profesorId: a.profesor?._id,
+        profesorNombre: a.profesor ? `${a.profesor.apellidos}, ${a.profesor.nombres}` : null,
+        aulaId: a.aula?._id
+      })),
+      aulas: aulas.map(a => ({
+        codigo: a.codigo,
+        tipo: a.tipo,
+        capacidad: a.capacidad
+      })),
+      horariosOcupadosGlobal: horariosExistentes.map(h => ({
         dia: h.diaSemana,
         inicio: h.horaInicio,
+        fin: h.horaFin,
         aula: h.aula?.codigo,
-        profesor: h.asignacion?.profesor?.apellidos
+        profesor: h.asignacion?.profesor?.apellidos,
+        bloque: h.asignacion?.bloque?.codigo
       }))
     };
 
@@ -164,28 +192,41 @@ router.post('/:id/planificar-gemini', async (req, res) => {
 
     // 3. Procesar y Guardar el plan
     let creados = 0;
+    const Asignacion = require('../models/Asignacion');
+    const Horario = require('../models/Horario');
+
     for (const item of plan) {
-      // Búsqueda inteligente del curso (nombre exacto o contiene)
+      // Búsqueda inteligente del curso
       const curso = cursos.find(c => 
         c.nombre.toLowerCase() === item.curso.toLowerCase() || 
-        c.nombre.toLowerCase().includes(item.curso.toLowerCase())
+        c.nombre.toLowerCase().includes(item.curso.toLowerCase()) ||
+        item.curso.toLowerCase().includes(c.nombre.toLowerCase())
       );
       
       if (curso) {
         // Encontrar o crear asignación
-        let asig = asignaciones.find(a => a.curso?._id.toString() === curso._id.toString());
+        let asig = asignaciones.find(a => String(a.curso?._id || a.curso) === String(curso._id));
+        
         if (!asig) {
-          // Si la IA propuso un profesor, buscarlo por apellido
-          const profId = profesores.find(p => 
-            p.apellidos.toLowerCase().includes(item.profesor.toLowerCase())
-          )?._id || profesores[0]?._id;
+          // Si la IA propuso un profesor, buscarlo en la lista completa
+          const profMatch = allProfesores.find(p => 
+            p.apellidos.toLowerCase().includes(item.profesor.toLowerCase()) ||
+            item.profesor.toLowerCase().includes(p.apellidos.toLowerCase())
+          );
+
+          const profId = profMatch?._id || allProfesores[0]?._id;
+
+          // Aula sugerida
+          const aulaMatch = aulas.find(a => a.codigo === item.aula);
 
           asig = await Asignacion.create({
             bloque: bloqueId,
             curso: curso._id,
             profesor: profId,
-            aula: aulas.find(a => a.codigo === item.aula)?._id || aulas[0]?._id
+            aula: aulaMatch?._id || aulas[0]?._id
           });
+          // Añadir a la lista local para evitar duplicar asignación en el sig. item
+          asignaciones.push(asig);
         }
 
         const existe = await Horario.exists({ 
@@ -201,8 +242,8 @@ router.post('/:id/planificar-gemini', async (req, res) => {
             diaSemana: item.dia,
             horaInicio: item.inicio,
             horaFin: item.fin,
-            tipoSesion: item.tipo || 'Teoría',
-            aula: aulaObj?._id
+            tipoSesion: item.tipo?.replace('|', '') || 'Teoría',
+            aula: aulaObj?._id || asig.aula
           });
           creados++;
         }

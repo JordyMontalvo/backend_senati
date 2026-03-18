@@ -68,19 +68,41 @@ router.get('/bloque/:bloqueId', async (req, res) => {
   }
 });
 
-// Función auxiliar para validar cruces de AULA y PROFESOR
-async function validarCruce(diaSemana, horaInicio, horaFin, aulaId, profesorId, horarioId = null) {
-  const queryAula = {
+// Función auxiliar para validar cruces de AULA y PROFESOR considerando RANGO DE FECHAS (Modular)
+async function validarCruce(diaSemana, horaInicio, horaFin, aulaId, profesorId, horarioId = null, fInicio = null, fFin = null) {
+  
+  // Lógica de solapamiento de fechas:
+  // (StartA <= EndB) AND (EndA >= StartB)
+  // Si una sesión NO tiene fechas, se asume "Todo el semestre" (Full Term).
+  
+  const dateOverlapQuery = {};
+  if (fInicio && fFin) {
+    // Si la nueva sesión tiene fechas, solo choca con:
+    // 1. Sesiones "Full Term" (sin fechas)
+    // 2. Sesiones Modulares cuyo rango se cruce
+    dateOverlapQuery.$or = [
+      { fechaInicio: { $exists: false } },
+      { fechaFin: { $exists: false } },
+      { 
+        $and: [
+          { fechaInicio: { $lte: fFin } },
+          { fechaFin: { $gte: fInicio } }
+        ]
+      }
+    ];
+  }
+
+  const queryTime = {
     diaSemana,
-    aula: aulaId,
-    $or: [{ horaInicio: { $lt: horaFin }, horaFin: { $gt: horaInicio } }]
+    $or: [{ horaInicio: { $lt: horaFin }, horaFin: { $gt: horaInicio } }],
+    ...dateOverlapQuery
   };
 
-  if (horarioId) queryAula._id = { $ne: horarioId };
+  if (horarioId) queryTime._id = { $ne: horarioId };
 
   // 1. Validar Aula
   if (aulaId) {
-    const cruceAula = await Horario.findOne(queryAula).populate({
+    const cruceAula = await Horario.findOne({ ...queryTime, aula: aulaId }).populate({
       path: 'asignacion',
       populate: { path: 'curso' }
     });
@@ -91,14 +113,10 @@ async function validarCruce(diaSemana, horaInicio, horaFin, aulaId, profesorId, 
   if (profesorId) {
     const Asignacion = require('../models/Asignacion');
     const asigsProf = await Asignacion.find({ profesor: profesorId }).select('_id');
-    const queryProf = {
-      diaSemana,
-      asignacion: { $in: asigsProf.map(a => a._id) },
-      $or: [{ horaInicio: { $lt: horaFin }, horaFin: { $gt: horaInicio } }]
-    };
-    if (horarioId) queryProf._id = { $ne: horarioId };
-
-    const cruceProf = await Horario.findOne(queryProf).populate({
+    const cruceProf = await Horario.findOne({ 
+      ...queryTime, 
+      asignacion: { $in: asigsProf.map(a => a._id) } 
+    }).populate({
       path: 'asignacion',
       populate: [{ path: 'curso' }, { path: 'bloque' }]
     });
@@ -120,8 +138,8 @@ router.post('/', async (req, res) => {
     let aulaId = aula || docAsignacion.aula;
     const profesorId = docAsignacion.profesor?._id || docAsignacion.profesor;
 
-    // Validar Cruce (Aula y Profesor)
-    const conflicto = await validarCruce(diaSemana, horaInicio, horaFin, aulaId, profesorId);
+    // Validar Cruce (Aula y Profesor) considerando fechas
+    const conflicto = await validarCruce(diaSemana, horaInicio, horaFin, aulaId, profesorId, null, req.body.fechaInicio, req.body.fechaFin);
     
     if (conflicto) {
       const { tipo, detalle } = conflicto;
@@ -161,11 +179,9 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
-    const { diaSemana, horaInicio, horaFin, aula } = req.body;
+    const { diaSemana, horaInicio, horaFin, aula, fechaInicio, fechaFin } = req.body;
     
     // Para validar necesitamos los datos completos. Si faltan en body, buscamos el doc actual.
-    // Pero asumiremos que el frontend envía todo. Si no, habría que hacer un findById primero.
-    // Para simplificar y mayor robustez, buscamos el actual.
     const horarioActual = await Horario.findById(req.params.id);
     if (!horarioActual) return res.status(404).json({ success: false, message: 'Horario no encontrado' });
 
@@ -173,6 +189,8 @@ router.put('/:id', async (req, res) => {
     const nuevoInicio = horaInicio || horarioActual.horaInicio;
     const nuevoFin = horaFin || horarioActual.horaFin;
     let nuevoAula = aula || horarioActual.aula;
+    const nuevaFInicio = fechaInicio || horarioActual.fechaInicio;
+    const nuevaFFin = fechaFin || horarioActual.fechaFin;
 
     // Obtener profesor de la asignación
     const Asignacion = require('../models/Asignacion');
@@ -180,7 +198,7 @@ router.put('/:id', async (req, res) => {
     const profesorId = asig?.profesor?._id || asig?.profesor;
 
     // Validar cruce
-    const conflicto = await validarCruce(nuevoDia, nuevoInicio, nuevoFin, nuevoAula, profesorId, req.params.id);
+    const conflicto = await validarCruce(nuevoDia, nuevoInicio, nuevoFin, nuevoAula, profesorId, req.params.id, nuevaFInicio, nuevaFFin);
     
     if (conflicto) {
       const { tipo, detalle } = conflicto;

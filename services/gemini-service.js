@@ -21,34 +21,52 @@ class GeminiService {
       throw new Error("GEMINI_API_KEY no configurada.");
     }
 
-    const { bloque, cursos, profesores, aulas, horariosExistentes } = contexto;
+    const { bloque, cursos, profesores, aulas, asignacionesActuales, horariosOcupadosGlobal } = contexto;
 
     const prompt = `
-      Eres el motor de IA 'Sify' para SENATI. Necesito planificar el bloque ${bloque.codigo} (Turno: ${bloque.turno}).
+      Eres el motor de IA 'Sify', experto en planificación académica para SENATI.
+      Tu misión es CREAR HORARIOS (Sesiones Semanales) para el bloque ${bloque.codigo} (NRC).
       
-      CURSOS A PROGRAMAR:
-      ${cursos.map(c => `- ${c.nombre} (Semanales: ${c.horasSemanales || 4}h)`).join('\n')}
+      ESTRUCTURA DEL BLOQUE:
+      - Periodo: ${bloque.periodo?.codigo || 'Actual'}
+      - Carrera: ${bloque.carrera?.nombre || 'General'}
+      - Turno: ${bloque.turno || 'Mañana'} (Suele ser 07:45-12:30 o 13:15-18:00)
+
+      CURSOS Y CARGA HORARIA (DISTRIBUIR HASTA COMPLETAR HORAS):
+      ${cursos.map(c => {
+        const asig = asignacionesActuales.find(a => String(a.cursoId) === String(c._id));
+        const profActual = asig?.profesorNombre || 'SIN DOCENTE ASIGNADO';
+        return `- ${c.nombre} (${c.codigo}):
+          * Horas Teoría/Tecnología: ${c.horasTeoria}h
+          * Horas Taller/Laboratorio: ${c.horasTaller}h
+          * Horas Virtuales: ${c.horasVirtual}h
+          * DOCENTE ASIGNADO: ${profActual}`;
+      }).join('\n')}
       
       RECURSOS DISPONIBLES:
-      - Docentes Expertos: ${profesores.map(p => `${p.apellidos} (${p.especialidad})`).join(', ')}
-      - Aulas/Laboratorios: ${aulas.map(a => `${a.codigo} (${a.tipo})`).join(', ')}
+      - DOCENTES (Pool para sugerir si no hay asignación): ${profesores.map(p => `${p.apellidos} (${p.especialidad})`).join(', ')}
+      - AMBIENTES: ${aulas.map(a => `${a.codigo} (${a.tipo})`).join(', ')}
       
-      RESTRICCIONES SENATI:
-      1. Horarios permitidos: Lunes a Sábado.
-      2. No cruces de docente ni aula. Considera horarios ocupados: ${JSON.stringify(horariosExistentes.slice(0, 30))}
-      3. Importante: "Formación en Empresa" no se programa en el aula.
-      4. Los bloques de clase son usualmente de 2h 15m (3h pedagógicas).
-      
+      REGLAS DE ORO SENATI:
+      1. PRIORIDAD: Si un curso ya tiene un "DOCENTE ASIGNADO", USA ESE DOCENTE. Si no, sugiere uno del pool con especialidad acorde.
+      2. TIPO DE SESIÓN: 
+         - Si son Horas Teoría -> Tipo: 'Teoría', Aula: 'Aula Común'.
+         - Si son Horas Taller -> Tipo: 'Taller', Aula: 'Laboratorio' o 'Taller'.
+         - Si son Horas Virtuales -> Tipo: 'Virtual', Aula: 'Entorno Virtual'.
+      3. BLOQUES DE TIEMPO: Las sesiones son de 2h 15m (3h pedagógicas). Ejemplo: 07:45 a 10:00 o 10:00 a 12:15.
+      4. DISPONIBILIDAD: No cruces docente ni aula. Horarios ocupados externos: ${JSON.stringify(horariosOcupadosGlobal.slice(0, 40))}
+      5. COMPLETITUD: Intenta cubrir el 100% de las horas (Teoría + Taller + Virtual) distribuidas en la semana (Lunes a Sábado).
+
       FORMATO DE SALIDA (ESTRICTAMENTE JSON):
       [
         { 
-          "curso": "Nombre Exacto", 
+          "curso": "Nombre Curso", 
           "profesor": "Apellidos Docente", 
           "dia": "Lunes", 
           "inicio": "07:45", 
           "fin": "10:00", 
           "aula": "CodigoAula",
-          "tipo": "Teoría/Laboratorio/Taller"
+          "tipo": "Teoría|Laboratorio|Taller|Virtual"
         }
       ]
     `;
